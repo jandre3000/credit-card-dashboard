@@ -1,0 +1,13 @@
+services:
+  credit-cards:
+    build: .
+    container_name: credit-cards-dashboard
+    ports:
+      - "8501:8000"
+    volumes:
+      - ./data:/app/data
+      - ./statements:/app/statements
+    environment:
+      - DB_PATH=/app/data/credit_cards.db
+      - STATEMENTS_DIR=/app/statements
+    restart: unless-stopped

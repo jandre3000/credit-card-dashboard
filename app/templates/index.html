@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credit Card Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>💳 Credit Card Dashboard</h1>
+        <div class="header-actions">
+            <button id="btn-upload" class="btn btn-primary" onclick="showUpload()">Upload Statement</button>
+            <span id="txn-count" class="badge"></span>
+        </div>
+    </header>
+
+    <!-- Upload Modal -->
+    <div id="upload-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Upload Amex Statement</h2>
+            <form id="upload-form" enctype="multipart/form-data">
+                <input type="file" name="file" accept=".pdf" required>
+                <div class="modal-actions">
+                    <button type="submit" class="btn btn-primary">Upload & Parse</button>
+                    <button type="button" class="btn btn-secondary" onclick="hideUpload()">Cancel</button>
+                </div>
+            </form>
+            <div id="upload-status" class="status hidden"></div>
+        </div>
+    </div>
+
+    <!-- PDF Viewer Modal -->
+    <div id="pdf-modal" class="modal hidden">
+        <div class="modal-content modal-wide">
+            <div class="modal-header">
+                <h2 id="pdf-title">Statement PDF</h2>
+                <button class="btn-close" onclick="hidePdf()">×</button>
+            </div>
+            <iframe id="pdf-viewer" src="" width="100%" height="600px"></iframe>
+        </div>
+    </div>
+
+    <main>
+        <!-- Date Range Filter -->
+        <section class="filters">
+            <label>From: <input type="date" id="filter-start"></label>
+            <label>To: <input type="date" id="filter-end"></label>
+            <button class="btn btn-small" onclick="applyFilters()">Apply</button>
+            <button class="btn btn-small btn-secondary" onclick="clearFilters()">Clear</button>
+        </section>
+
+        <!-- Chart Section -->
+        <section class="chart-section">
+            <div class="chart-controls">
+                <button class="btn btn-small active" data-chart="daily" onclick="switchChart('daily')">Total Spending</button>
+                <button class="btn btn-small" data-chart="category" onclick="switchChart('category')">By Category</button>
+                <button class="btn btn-small" data-chart="vendor" onclick="switchChart('vendor')">By Vendor</button>
+                <button class="btn btn-small" data-chart="points" onclick="switchChart('points')">Points Over Time</button>
+                <button class="btn btn-small btn-secondary" onclick="resetZoom()">Reset Zoom</button>
+            </div>
+            <div class="chart-container">
+                <canvas id="main-chart"></canvas>
+            </div>
+        </section>
+
+        <!-- Transactions Table -->
+        <section class="table-section">
+            <h2>Transactions <span id="table-count"></span></h2>
+            <div class="table-scroll">
+                <table id="txn-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th>Cardholder</th>
+                            <th class="num">Amount</th>
+                            <th class="num">Points</th>
+                            <th>Category</th>
+                            <th>Card</th>
+                        </tr>
+                    </thead>
+                    <tbody id="txn-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Statements List -->
+        <section class="statements-section">
+            <h2>Statements</h2>
+            <div id="statements-list"></div>
+        </section>
+    </main>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
