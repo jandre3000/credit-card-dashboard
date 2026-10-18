@@ -63,6 +63,13 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_txn_statement ON transactions(statement_id);
         """)
 
+        # Auto-migrate: add 'category' column if missing from existing DB
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(transactions)").fetchall()]
+        if "category" not in cols:
+            conn.execute("ALTER TABLE transactions ADD COLUMN category TEXT DEFAULT ''")
+
+        conn.commit()
+
 
 def insert_statement(conn: sqlite3.Connection, data: dict) -> int:
     cur = conn.execute(

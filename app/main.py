@@ -89,10 +89,14 @@ def scan_statements_folder():
 
 @app.on_event("startup")
 def startup():
+    # Blow away and rebuild DB from source PDFs on every start
+    db_path = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "..", "data", "credit_cards.db"))
+    if os.path.exists(db_path):
+        os.remove(db_path)
     init_db()
     results = scan_statements_folder()
     if results:
-        print(f"Auto-ingested {len(results)} statement(s) from {STATEMENTS_DIR}")
+        print(f"Rebuilt DB: ingested {len(results)} statement(s) from {STATEMENTS_DIR}")
 
 
 @app.get("/", response_class=HTMLResponse)
