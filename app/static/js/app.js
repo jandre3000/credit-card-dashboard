@@ -18,11 +18,10 @@ const CATEGORY_COLORS = {
     'Travel': '#e11d48', 'Kids & Education': '#84cc16', 'Auto': '#78716c',
     'Gifts': '#d946ef', 'Other': '#6b7280',
 };
-
 const VENDOR_COLORS = [
-    '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6',
-    '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#a855f7',
-    '#84cc16', '#e11d48', '#0ea5e9', '#d946ef', '#eab308',
+    '#6366f1','#22c55e','#f59e0b','#ef4444','#8b5cf6',
+    '#06b6d4','#ec4899','#14b8a6','#f97316','#a855f7',
+    '#84cc16','#e11d48','#0ea5e9','#d946ef','#eab308',
 ];
 
 // ── Init ──────────────────────────────────────────────────────────
@@ -118,13 +117,73 @@ function toggleRawDesc() {
 async function loadCategoryList() {
     const data = await fetchJSON('/api/categories');
     categoryList = data.categories;
-    // Populate the rules form dropdown
+    populateCatDropdowns();
+}
+
+function populateCatDropdowns() {
+    // Rules form dropdown
     const sel = document.getElementById('rule-category');
-    if (sel) sel.innerHTML = catDropdown('');
+    if (sel) sel.innerHTML = catDropdownOptions('');
+    // Vendor modal dropdown
+    const vm = document.getElementById('vm-category');
+    if (vm) vm.innerHTML = catDropdownOptions('');
+}
+
+function catDropdownOptions(selected) {
+    return '<option value="">None (use auto-categorizer)</option>' +
+        categoryList.map(c => `<option value="${escHtml(c)}"${c === selected ? ' selected' : ''}>${escHtml(c)}</option>`).join('');
 }
 
 function catCssClass(cat) {
     return `cat-${(cat||'other').toLowerCase().replace(/[^a-z]/g,'')}`;
+}
+
+function toggleCategories() {
+    const panel = document.getElementById('cats-panel');
+    const btn = document.getElementById('cats-toggle');
+    panel.classList.toggle('hidden');
+    btn.textContent = panel.classList.contains('hidden') ? 'Show' : 'Hide';
+    if (!panel.classList.contains('hidden')) renderCategories();
+}
+
+function renderCategories() {
+    const div = document.getElementById('cats-list');
+    div.innerHTML = categoryList.map((c, i) => `
+        <div class="cat-row">
+            <span class="cat-row-name"><span class="cat-badge ${catCssClass(c)}">${escHtml(c)}</span></span>
+            <div class="rule-actions">
+                <button class="btn btn-small btn-secondary" onclick="editCategoryName(${i})">Edit</button>
+                <button class="btn btn-small btn-danger" onclick="deleteCategory(${i})">Delete</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function addCategory() {
+    const input = document.getElementById('new-cat-name');
+    const name = input.value.trim();
+    if (!name || categoryList.includes(name)) return;
+    categoryList.push(name);
+    await fetchJSON_withMethod('PUT', '/api/categories', { categories: categoryList });
+    input.value = '';
+    populateCatDropdowns(); renderCategories();
+}
+
+async function editCategoryName(index) {
+    const old = categoryList[index];
+    const newName = prompt('Category name:', old);
+    if (newName === null || !newName.trim() || newName.trim() === old) return;
+    categoryList[index] = newName.trim();
+    await fetchJSON_withMethod('PUT', '/api/categories', { categories: categoryList });
+    populateCatDropdowns(); renderCategories(); loadAllData();
+}
+
+async function deleteCategory(index) {
+    const name = categoryList[index];
+    if (!confirm(`Delete category "${name}"? Transactions with this category will keep it.`)) return;
+    categoryList.splice(index, 1);
+    await fetchJSON_withMethod('PUT', '/api/categories', { categories: categoryList });
+    populateCatDropdowns(); renderCategories();
 }
 
 // ── Vendor Rules ──────────────────────────────────────────────────
@@ -161,11 +220,6 @@ function renderRules() {
     `).join('');
 }
 
-function catDropdown(selected) {
-    return '<option value="">None (use auto-categorizer)</option>' +
-        categoryList.map(c => `<option value="${escHtml(c)}"${c === selected ? ' selected' : ''}>${escHtml(c)}</option>`).join('');
-}
-
 async function addRule() {
     const pattern = document.getElementById('rule-pattern').value.trim();
     const vendor = document.getElementById('rule-vendor').value.trim();
@@ -184,58 +238,69 @@ async function deleteRule(pattern) {
     await loadVendorRules(); await loadAllData();
 }
 
-function editRule(index) {
-    const rule = vendorRules[index];
-    const newPattern = prompt('Pattern:', rule.pattern);
-    if (newPattern === null) return;
-    const newVendor = prompt('Vendor:', rule.vendor);
-    if (newVendor === null) return;
-    if (!newPattern.trim() || !newVendor.trim()) return;
-    // Use a simple prompt for category since we can't easily do a dropdown in prompt()
-    const catHint = `Category (current: ${rule.category || 'none'}):\n${categoryList.join(', ')}`;
-    const newCat = prompt(catHint, rule.category || '');
-    if (newCat === null) return;
-    fetchJSON_withMethod('PUT', '/api/vendor-rules', {
-        old_pattern: rule.pattern, pattern: newPattern.trim(), vendor: newVendor.trim(), category: newCat.trim()
-    }).then(() => { loadVendorRules(); loadAllData(); });
+// ── Vendor Rule Modal ─────────────────────────────────────────────
+
+function showVendorModal(title, pattern, vendor, category, oldPattern) {
+    document.getElementById('vendor-modal-title').textContent = title;
+    document.getElementById('vm-pattern').value = pattern || '';
+    document.getElementById('vm-vendor').value = vendor || '';
+    document.getElementById('vm-category').value = category || '';
+    document.getElementById('vm-old-pattern').value = oldPattern || '';
+    populateCatDropdowns();
+    // Re-set category after dropdown populated
+    document.getElementById('vm-category').value = category || '';
+    document.getElementById('vendor-modal').classList.remove('hidden');
+    document.getElementById('vm-pattern').focus();
 }
 
-async function saveVendorFromCell(txnId, rawDesc) {
-    // Step 1: Pattern
-    const pattern = prompt('Pattern to match (substring):', rawDesc.trim());
-    if (pattern === null || !pattern.trim()) return;
-    // Step 2: Vendor name
-    const vendor = prompt('Vendor name:', '');
-    if (vendor === null || !vendor.trim()) return;
-    // Step 3: Category (dropdown-style via prompt with list)
-    const catHint = `Assign category (or leave blank to skip):\n${categoryList.join(', ')}`;
-    const category = prompt(catHint, '');
-    if (category === null) return;
+function hideVendorModal() {
+    document.getElementById('vendor-modal').classList.add('hidden');
+}
 
-    await fetchJSON_withMethod('POST', '/api/vendor-rules', {
-        pattern: pattern.trim(), vendor: vendor.trim(), category: category.trim()
-    });
+async function submitVendorModal(e) {
+    e.preventDefault();
+    const pattern = document.getElementById('vm-pattern').value.trim();
+    const vendor = document.getElementById('vm-vendor').value.trim();
+    const category = document.getElementById('vm-category').value;
+    const oldPattern = document.getElementById('vm-old-pattern').value;
+    if (!pattern || !vendor) return;
+
+    if (oldPattern) {
+        // Update existing rule
+        await fetchJSON_withMethod('PUT', '/api/vendor-rules', { old_pattern: oldPattern, pattern, vendor, category });
+    } else {
+        // Add new rule
+        await fetchJSON_withMethod('POST', '/api/vendor-rules', { pattern, vendor, category });
+    }
+    hideVendorModal();
     await loadVendorRules(); await loadAllData();
+}
+
+function editRule(index) {
+    const rule = vendorRules[index];
+    showVendorModal('Edit Vendor Rule', rule.pattern, rule.vendor, rule.category || '', rule.pattern);
+}
+
+function saveVendorFromCell(txnId, rawDesc) {
+    showVendorModal('Create Vendor Rule', rawDesc.trim(), '', '', '');
 }
 
 // ── Per-Transaction Category Override ─────────────────────────────
 
 function editCategory(txnId, currentCat) {
-    // Create an inline dropdown
     const td = event.target.closest('td');
     const existing = td.querySelector('select');
-    if (existing) return; // already editing
+    if (existing) return;
 
     const select = document.createElement('select');
-    select.innerHTML = catDropdown(currentCat);
+    select.innerHTML = catDropdownOptions(currentCat);
     select.value = currentCat;
     select.className = 'inline-cat-select';
     select.onchange = async () => {
-        const newCat = select.value;
-        await fetchJSON_withMethod('PUT', `/api/transactions/${txnId}/category`, { category: newCat });
+        await fetchJSON_withMethod('PUT', `/api/transactions/${txnId}/category`, { category: select.value });
         await loadAllData();
     };
-    select.onblur = () => { renderTransactions(); }; // restore on blur if not changed
+    select.onblur = () => { setTimeout(() => renderTransactions(), 200); };
 
     td.innerHTML = '';
     td.appendChild(select);
@@ -253,8 +318,8 @@ function switchView(view) {
 function switchChart(chart) {
     currentChart = chart;
     document.querySelectorAll('[data-chart]').forEach(b => b.classList.toggle('active', b.dataset.chart === chart));
-    const viewToggle = document.querySelector('.toggle-group');
-    if (viewToggle) viewToggle.style.display = chart === 'spending' ? '' : 'none';
+    const vt = document.querySelector('.toggle-group');
+    if (vt) vt.style.display = chart === 'spending' ? '' : 'none';
     renderChart();
 }
 
@@ -272,92 +337,68 @@ function renderChart() {
 }
 
 function renderDailyChart(ctx) {
-    const data = allData.daily;
-    mainChart = new Chart(ctx, { type: 'bar', data: { labels: data.map(d => d.date),
-        datasets: [{ label: 'Daily Spending', data: data.map(d => d.total), backgroundColor: '#6366f180', borderColor: '#6366f1', borderWidth: 1, borderRadius: 2 }] },
-        options: spendingOpts('$') });
+    const d = allData.daily;
+    mainChart = new Chart(ctx, { type:'bar', data:{labels:d.map(x=>x.date),datasets:[{label:'Daily',data:d.map(x=>x.total),backgroundColor:'#6366f180',borderColor:'#6366f1',borderWidth:1,borderRadius:2}]}, options:spendingOpts('$') });
 }
-
 function renderMonthlyChart(ctx) {
-    const data = allData.monthly;
-    mainChart = new Chart(ctx, { type: 'bar', data: { labels: data.map(d => formatMonth(d.month)),
-        datasets: [{ label: 'Monthly Spending', data: data.map(d => d.total), backgroundColor: '#6366f180', borderColor: '#6366f1', borderWidth: 1, borderRadius: 4 }] },
-        options: spendingOpts('$') });
+    const d = allData.monthly;
+    mainChart = new Chart(ctx, { type:'bar', data:{labels:d.map(x=>formatMonth(x.month)),datasets:[{label:'Monthly',data:d.map(x=>x.total),backgroundColor:'#6366f180',borderColor:'#6366f1',borderWidth:1,borderRadius:4}]}, options:spendingOpts('$') });
 }
-
 function renderCategoryPie(ctx) {
-    const data = allData.categories;
-    const labels = data.map(d => d.category);
-    const colors = labels.map(c => CATEGORY_COLORS[c] || '#999');
-    mainChart = new Chart(ctx, { type: 'doughnut', data: { labels, datasets: [{ data: data.map(d => d.total),
-        backgroundColor: colors.map(c => c + 'cc'), borderColor: colors, borderWidth: 1 }] }, options: pieOpts('$') });
+    const d = allData.categories, labels=d.map(x=>x.category), colors=labels.map(c=>CATEGORY_COLORS[c]||'#999');
+    mainChart = new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data:d.map(x=>x.total),backgroundColor:colors.map(c=>c+'cc'),borderColor:colors,borderWidth:1}]},options:pieOpts('$')});
 }
-
 function renderVendorPie(ctx) {
-    const data = allData.vendor;
-    const labels = data.map(d => (d.vendor_name || '').length > 20 ? d.vendor_name.substring(0, 20) + '…' : d.vendor_name);
-    const colors = labels.map((_, i) => VENDOR_COLORS[i % VENDOR_COLORS.length]);
-    mainChart = new Chart(ctx, { type: 'doughnut', data: { labels, datasets: [{ data: data.map(d => d.total),
-        backgroundColor: colors.map(c => c + 'cc'), borderColor: colors, borderWidth: 1 }] }, options: pieOpts('$') });
+    const d = allData.vendor, labels=d.map(x=>(x.vendor_name||'').length>20?x.vendor_name.substring(0,20)+'…':x.vendor_name);
+    const colors = labels.map((_,i)=>VENDOR_COLORS[i%VENDOR_COLORS.length]);
+    mainChart = new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data:d.map(x=>x.total),backgroundColor:colors.map(c=>c+'cc'),borderColor:colors,borderWidth:1}]},options:pieOpts('$')});
 }
-
 function renderPointsChart(ctx) {
-    const data = allData.points;
-    const catTotals = {}, catColors = {};
-    data.forEach(d => { catTotals[d.category] = (catTotals[d.category] || 0) + d.points; catColors[d.category] = CATEGORY_COLORS[d.category] || '#999'; });
-    const cats = Object.keys(catTotals).sort((a, b) => catTotals[b] - catTotals[a]);
-    mainChart = new Chart(ctx, { type: 'bar', data: { labels: cats, datasets: [{ label: 'Points Earned', data: cats.map(c => catTotals[c]),
-        backgroundColor: cats.map(c => (catColors[c]||'#999')+'80'), borderColor: cats.map(c => catColors[c]||'#999'), borderWidth: 1, borderRadius: 4 }] },
-        options: spendingOpts('pts') });
+    const d=allData.points,totals={},colors={};
+    d.forEach(x=>{totals[x.category]=(totals[x.category]||0)+x.points;colors[x.category]=CATEGORY_COLORS[x.category]||'#999';});
+    const cats=Object.keys(totals).sort((a,b)=>totals[b]-totals[a]);
+    mainChart=new Chart(ctx,{type:'bar',data:{labels:cats,datasets:[{label:'Points',data:cats.map(c=>totals[c]),backgroundColor:cats.map(c=>(colors[c]||'#999')+'80'),borderColor:cats.map(c=>colors[c]||'#999'),borderWidth:1,borderRadius:4}]},options:spendingOpts('pts')});
 }
 
-function spendingOpts(unit) {
-    return { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${unit==='$'?'$':''}${ctx.parsed.y.toLocaleString()}${unit==='pts'?' pts':''}` } } },
-        scales: { x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', maxTicksLimit: 20 } },
-            y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', callback: v => unit==='$'?`$${v.toLocaleString()}`:v.toLocaleString() } } } };
+function spendingOpts(u) {
+    return {responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${u==='$'?'$':''}${c.parsed.y.toLocaleString()}${u==='pts'?' pts':''}`}}},
+        scales:{x:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#6b7280',maxTicksLimit:20}},
+            y:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#6b7280',callback:v=>u==='$'?`$${v.toLocaleString()}`:v.toLocaleString()}}}};
 }
-
-function pieOpts(unit) {
-    return { responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: true, position: 'right', labels: { color: '#9ca3af', boxWidth: 12, padding: 10, font: { size: 11 } } },
-            tooltip: { callbacks: { label: ctx => `${ctx.label}: ${unit==='$'?'$':''}${ctx.parsed.toLocaleString()}${unit==='pts'?' pts':''} (${((ctx.parsed/ctx.dataset.data.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)` } } } };
+function pieOpts(u) {
+    return {responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:true,position:'right',labels:{color:'#9ca3af',boxWidth:12,padding:10,font:{size:11}}},
+            tooltip:{callbacks:{label:c=>`${c.label}: ${u==='$'?'$':''}${c.parsed.toLocaleString()}${u==='pts'?' pts':''} (${((c.parsed/c.dataset.data.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`}}}};
 }
 
 // ── Transactions Table ────────────────────────────────────────────
 
 function renderTransactions() {
     let txns = [...allData.transactions];
-    if (currentTableView === 'monthly' && selectedMonth) {
-        txns = txns.filter(t => t.transaction_date.startsWith(selectedMonth));
-    }
+    if (currentTableView === 'monthly' && selectedMonth) txns = txns.filter(t => t.transaction_date.startsWith(selectedMonth));
     txns.sort((a, b) => {
-        let va = a[sortColumn], vb = b[sortColumn];
-        if (sortColumn === 'amount' || sortColumn === 'points') { va = parseFloat(va)||0; vb = parseFloat(vb)||0; }
-        else { va = (va||'').toString().toLowerCase(); vb = (vb||'').toString().toLowerCase(); }
-        if (va < vb) return sortDirection === 'asc' ? -1 : 1;
-        if (va > vb) return sortDirection === 'asc' ? 1 : -1;
-        return 0;
+        let va=a[sortColumn],vb=b[sortColumn];
+        if(sortColumn==='amount'||sortColumn==='points'){va=parseFloat(va)||0;vb=parseFloat(vb)||0;}
+        else{va=(va||'').toLowerCase();vb=(vb||'').toLowerCase();}
+        if(va<vb)return sortDirection==='asc'?-1:1;if(va>vb)return sortDirection==='asc'?1:-1;return 0;
     });
-
     const tbody = document.getElementById('txn-body');
     document.getElementById('table-count').textContent = `(${txns.length})`;
     const showRaw = document.getElementById('show-raw-desc')?.checked;
-
     tbody.innerHTML = txns.map(t => {
-        const amtClass = t.amount < 0 ? 'amount-neg' : 'amount-pos';
-        const catClass = catCssClass(t.category);
-        const ptsClass = `pts-${t.points_rate}x`;
-        const vendorDisplay = t.vendor || t.description;
+        const amt = t.amount<0?'amount-neg':'amount-pos';
+        const cc = catCssClass(t.category), pc = `pts-${t.points_rate}x`;
+        const vd = t.vendor||t.description;
         return `<tr>
             <td>${t.transaction_date}</td>
-            <td class="vendor-cell" onclick="saveVendorFromCell(${t.id}, '${escAttr(t.description)}')" title="Click to create vendor rule">${escHtml(vendorDisplay)}</td>
-            <td class="raw-col${showRaw ? '' : ' hidden'}">${escHtml(t.description)}</td>
+            <td class="vendor-cell" onclick="saveVendorFromCell(${t.id},'${escAttr(t.description)}')" title="Click to create vendor rule">${escHtml(vd)}</td>
+            <td class="raw-col${showRaw?'':' hidden'}">${escHtml(t.description)}</td>
             <td>${escHtml(t.cardholder)}</td>
-            <td class="num ${amtClass}">$${t.amount.toFixed(2)}</td>
+            <td class="num ${amt}">$${t.amount.toFixed(2)}</td>
             <td class="num"><span class="points-badge">${t.points}</span></td>
-            <td class="cat-cell" onclick="editCategory(${t.id}, '${escAttr(t.category)}')" title="Click to change category"><span class="cat-badge ${catClass}">${escHtml(t.category||'Other')}</span></td>
-            <td><span class="cat-badge ${ptsClass}">${t.points_rate}x ${escHtml(t.points_category)}</span></td>
+            <td class="cat-cell" onclick="editCategory(${t.id},'${escAttr(t.category)}')" title="Click to change"><span class="cat-badge ${cc}">${escHtml(t.category||'Other')}</span></td>
+            <td><span class="cat-badge ${pc}">${t.points_rate}x ${escHtml(t.points_category)}</span></td>
             <td>${escHtml(t.card)}</td>
         </tr>`;
     }).join('');
@@ -367,76 +408,39 @@ function renderTransactions() {
 
 function renderStatements(stmts) {
     const div = document.getElementById('statements-list');
-    if (!stmts.length) { div.innerHTML = '<p style="color:var(--text-dim)">No statements uploaded yet.</p>'; return; }
-    div.innerHTML = stmts.map(s => `
-        <div class="statement-row">
-            <div class="statement-info">
-                <strong>${escHtml(s.statement_date)}</strong>
-                <span class="dim">· $${(s.total_spend||0).toFixed(2)} · ${(s.total_points||0).toLocaleString()} pts · ${escHtml(s.filename||'')}</span>
-            </div>
-            <div class="statement-actions">
-                <button class="btn btn-small btn-secondary" onclick="viewPdf('${escAttr(s.filename)}')">View PDF</button>
-                <button class="btn btn-small btn-danger" onclick="deleteStmt(${s.id})">Delete</button>
-            </div>
-        </div>
-    `).join('');
+    if(!stmts.length){div.innerHTML='<p style="color:var(--text-dim)">No statements uploaded yet.</p>';return;}
+    div.innerHTML = stmts.map(s=>`<div class="statement-row"><div class="statement-info"><strong>${escHtml(s.statement_date)}</strong><span class="dim"> · $${(s.total_spend||0).toFixed(2)} · ${(s.total_points||0).toLocaleString()} pts · ${escHtml(s.filename||'')}</span></div><div class="statement-actions"><button class="btn btn-small btn-secondary" onclick="viewPdf('${escAttr(s.filename)}')">View PDF</button><button class="btn btn-small btn-danger" onclick="deleteStmt(${s.id})">Delete</button></div></div>`).join('');
 }
 
 // ── Upload ────────────────────────────────────────────────────────
 
-function showUpload() { document.getElementById('upload-modal').classList.remove('hidden'); }
-function hideUpload() { document.getElementById('upload-modal').classList.add('hidden'); document.getElementById('upload-status').classList.add('hidden'); }
+function showUpload(){document.getElementById('upload-modal').classList.remove('hidden');}
+function hideUpload(){document.getElementById('upload-modal').classList.add('hidden');document.getElementById('upload-status').classList.add('hidden');}
 
-async function handleUpload(e) {
-    e.preventDefault();
-    const form = e.target;
-    const files = form.querySelector('input[type=file]').files;
-    if (!files.length) return;
-    const status = document.getElementById('upload-status');
-    status.className = 'status'; status.textContent = `Uploading ${files.length} file(s)...`; status.classList.remove('hidden');
-    const fd = new FormData();
-    for (const file of files) fd.append('files', file);
-    try {
-        const res = await fetch(`${API}/api/upload`, { method: 'POST', body: fd });
-        const data = await res.json();
-        if (!res.ok) { status.className = 'status error'; status.textContent = `Error: ${data.detail||'Upload failed'}`; return; }
-        const parts = [];
-        if (data.ingested > 0) {
-            const txns = data.results.reduce((s,r)=>s+r.transactions,0);
-            const spend = data.results.reduce((s,r)=>s+r.total_spend,0);
-            const pts = data.results.reduce((s,r)=>s+r.total_points,0);
-            parts.push(`✓ ${data.ingested} statement(s): ${txns} txns, $${spend.toFixed(2)}, ${pts.toLocaleString()} pts`);
-        }
-        if (data.errors.length) parts.push(`${data.errors.length} failed`);
-        status.className = data.errors.length ? 'status error' : 'status ok';
-        status.textContent = parts.join(' · ') || 'No new statements';
-        form.reset();
-        setTimeout(() => { hideUpload(); loadAllData(); }, 2000);
-    } catch (err) { status.className = 'status error'; status.textContent = `Error: ${err.message}`; }
+async function handleUpload(e){
+    e.preventDefault();const form=e.target;const files=form.querySelector('input[type=file]').files;
+    if(!files.length)return;const status=document.getElementById('upload-status');
+    status.className='status';status.textContent=`Uploading ${files.length} file(s)...`;status.classList.remove('hidden');
+    const fd=new FormData();for(const f of files)fd.append('files',f);
+    try{const res=await fetch(`${API}/api/upload`,{method:'POST',body:fd});const data=await res.json();
+    if(!res.ok){status.className='status error';status.textContent=`Error: ${data.detail||'Upload failed'}`;return;}
+    const parts=[];if(data.ingested>0){const tx=data.results.reduce((s,r)=>s+r.transactions,0);const sp=data.results.reduce((s,r)=>s+r.total_spend,0);const pt=data.results.reduce((s,r)=>s+r.total_points,0);parts.push(`✓ ${data.ingested} statement(s): ${tx} txns, $${sp.toFixed(2)}, ${pt.toLocaleString()} pts`);}
+    if(data.errors.length)parts.push(`${data.errors.length} failed`);
+    status.className=data.errors.length?'status error':'status ok';status.textContent=parts.join(' · ')||'No new statements';
+    form.reset();setTimeout(()=>{hideUpload();loadAllData();},2000);
+    }catch(err){status.className='status error';status.textContent=`Error: ${err.message}`;}
 }
 
 // ── PDF Viewer ────────────────────────────────────────────────────
 
-function viewPdf(filename) {
-    document.getElementById('pdf-title').textContent = filename;
-    document.getElementById('pdf-viewer').src = `${API}/api/pdf/${filename}`;
-    document.getElementById('pdf-modal').classList.remove('hidden');
-}
-function hidePdf() { document.getElementById('pdf-modal').classList.add('hidden'); document.getElementById('pdf-viewer').src = ''; }
+function viewPdf(fn){document.getElementById('pdf-title').textContent=fn;document.getElementById('pdf-viewer').src=`${API}/api/pdf/${fn}`;document.getElementById('pdf-modal').classList.remove('hidden');}
+function hidePdf(){document.getElementById('pdf-modal').classList.add('hidden');document.getElementById('pdf-viewer').src='';}
 
-// ── Delete ────────────────────────────────────────────────────────
-
-async function deleteStmt(id) {
-    if (!confirm('Delete this statement and all its transactions?')) return;
-    await fetch(`${API}/api/statements/${id}`, { method: 'DELETE' });
-    loadAllData();
-}
+async function deleteStmt(id){if(!confirm('Delete this statement and all its transactions?'))return;await fetch(`${API}/api/statements/${id}`,{method:'DELETE'});loadAllData();}
 
 // ── Utils ─────────────────────────────────────────────────────────
 
-async function fetchJSON(url) { return (await fetch(url)).json(); }
-async function fetchJSON_withMethod(method, url, body) {
-    return (await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
-}
-function escHtml(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
-function escAttr(s) { return (s||'').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+async function fetchJSON(u){return(await fetch(u)).json();}
+async function fetchJSON_withMethod(m,u,b){return(await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json();}
+function escHtml(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+function escAttr(s){return(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
