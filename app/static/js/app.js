@@ -72,7 +72,13 @@ function applyFilters() { loadAllData(); }
 function clearFilters() {
     document.getElementById('filter-start').value = '';
     document.getElementById('filter-end').value = '';
-    selectedMonth = ''; loadAllData();
+    selectedMonth = '';
+    currentView = 'monthly';
+    currentTableView = 'all';
+    document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === 'monthly'));
+    document.querySelectorAll('[data-tview]').forEach(b => b.classList.toggle('active', b.dataset.tview === 'all'));
+    document.getElementById('month-select').classList.toggle('hidden', true);
+    loadAllData();
 }
 
 // ── Month Select ──────────────────────────────────────────────────
@@ -106,12 +112,24 @@ function switchTableView(view) {
 function filterByMonth(month) { selectedMonth = month; renderTransactions(); }
 
 function filterByChartMonth(month) {
+    // Set date range to the selected month
+    const [y, m] = month.split('-');
+    const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+    document.getElementById('filter-start').value = `${month}-01`;
+    document.getElementById('filter-end').value = `${month}-${String(lastDay).padStart(2, '0')}`;
+
+    // Switch spending chart to daily view for this month
+    currentView = 'daily';
+    document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === 'daily'));
+
+    // Also filter the table
     selectedMonth = month;
     currentTableView = 'monthly';
     document.querySelectorAll('[data-tview]').forEach(b => b.classList.toggle('active', b.dataset.tview === 'monthly'));
     document.getElementById('month-select').classList.toggle('hidden', false);
     document.getElementById('month-select').value = month;
-    renderTransactions();
+
+    loadAllData();
 }
 
 // ── Raw Description Toggle ────────────────────────────────────────
