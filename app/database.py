@@ -49,6 +49,7 @@ def init_db():
             posting_date TEXT,
             cardholder TEXT,
             description TEXT NOT NULL,
+            vendor TEXT DEFAULT '',
             amount REAL NOT NULL,
             points INTEGER DEFAULT 0,
             points_rate INTEGER DEFAULT 0,
@@ -94,8 +95,8 @@ def insert_transactions(conn: sqlite3.Connection, statement_id: int, card: str, 
     conn.executemany(
         """INSERT INTO transactions
            (statement_id, card, transaction_date, posting_date, cardholder,
-            description, amount, points, points_rate, points_category, category)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            description, vendor, amount, points, points_rate, points_category, category)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             (
                 statement_id,
@@ -104,6 +105,7 @@ def insert_transactions(conn: sqlite3.Connection, statement_id: int, card: str, 
                 t.get("posting_date", ""),
                 t.get("cardholder", ""),
                 t["description"],
+                t.get("vendor", ""),
                 t["amount"],
                 t.get("points", 0),
                 t.get("points_rate", 0),
@@ -148,7 +150,7 @@ def get_transactions(
 
     rows = conn.execute(
         f"""SELECT t.id, t.transaction_date, t.posting_date, t.cardholder,
-                   t.description, t.amount, t.points, t.points_rate,
+                   t.description, t.vendor, t.amount, t.points, t.points_rate,
                    t.points_category, t.category, t.card
             FROM transactions t
             WHERE {where}
@@ -266,27 +268,29 @@ def get_spending_by_vendor(conn: sqlite3.Connection, start_date: str = None, end
 
     where = " AND ".join(conditions)
 
-    # Get top vendors by total spend
+    # Get top vendors by total spend (using normalized vendor name)
     top_vendors = conn.execute(
-        f"""SELECT t.description as vendor, SUM(t.amount) as total
+        f"""SELECT CASE WHEN t.vendor != '' THEN t.vendor ELSE t.description END as vendor_name,
+                   SUM(t.amount) as total
             FROM transactions t
             WHERE {where}
-            GROUP BY t.description
+            GROUP BY vendor_name
             ORDER BY total DESC
             LIMIT ?""",
         params + [top_n],
     ).fetchall()
-    vendor_names = [r["vendor"] for r in top_vendors]
+    vendor_names = [r["vendor_name"] for r in top_vendors]
 
     if not vendor_names:
         return []
 
     placeholders = ",".join(["?"] * len(vendor_names))
     rows = conn.execute(
-        f"""SELECT t.description as vendor, t.transaction_date as date, SUM(t.amount) as total
+        f"""SELECT CASE WHEN t.vendor != '' THEN t.vendor ELSE t.description END as vendor_name,
+                   t.transaction_date as date, SUM(t.amount) as total
             FROM transactions t
-            WHERE {where} AND t.description IN ({placeholders})
-            GROUP BY t.description, t.transaction_date
+            WHERE {where} AND vendor_name IN ({placeholders})
+            GROUP BY vendor_name, t.transaction_date
             ORDER BY t.transaction_date""",
         params + vendor_names,
     ).fetchall()

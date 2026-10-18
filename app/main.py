@@ -16,6 +16,7 @@ from database import get_spending_by_vendor, get_points_over_time, get_statement
 from database import delete_statement, get_transaction_count, get_spending_by_custom_category
 from parser import parse_amex_pdf
 from categories import categorize
+from vendor_rules import load_rules, normalize_vendor, save_rules, add_rule, delete_rule
 
 app = FastAPI(title="Credit Card Dashboard")
 
@@ -48,9 +49,11 @@ def ingest_pdf(pdf_path: Path) -> dict | None:
     if not result["transactions"]:
         return None
 
-    # Add auto-categories
+    # Add auto-categories and vendor normalization
+    rules = load_rules()
     for t in result["transactions"]:
         t["category"] = categorize(t["description"])
+        t["vendor"] = normalize_vendor(t["description"], rules)
 
     closing = result["header"].get("closing_date", "")
     statement_date = closing if closing else "unknown"
@@ -214,6 +217,41 @@ async def api_points(
     with db() as conn:
         data = get_points_over_time(conn, start, end)
     return {"data": data}
+
+
+# ── Vendor Rules ───────────────────────────────────────────────────
+
+@app.get("/api/vendor-rules")
+async def api_get_vendor_rules():
+    return {"rules": load_rules()}
+
+
+@app.post("/api/vendor-rules")
+async def api_add_vendor_rule(data: dict):
+    pattern = data.get("pattern", "").strip()
+    vendor = data.get("vendor", "").strip()
+    if not pattern or not vendor:
+        raise HTTPException(400, "Both pattern and vendor are required")
+    add_rule(pattern, vendor)
+    return {"status": "ok", "rules": load_rules()}
+
+
+@app.put("/api/vendor-rules")
+async def api_update_vendor_rule(data: dict):
+    old_pattern = data.get("old_pattern", "").strip()
+    new_pattern = data.get("pattern", "").strip()
+    vendor = data.get("vendor", "").strip()
+    if not old_pattern or not new_pattern or not vendor:
+        raise HTTPException(400, "old_pattern, pattern, and vendor are required")
+    from vendor_rules import update_rule
+    update_rule(old_pattern, new_pattern, vendor)
+    return {"status": "ok", "rules": load_rules()}
+
+
+@app.delete("/api/vendor-rules/{pattern:path}")
+async def api_delete_vendor_rule(pattern: str):
+    delete_rule(pattern)
+    return {"status": "ok", "rules": load_rules()}
 
 
 @app.get("/api/statements")

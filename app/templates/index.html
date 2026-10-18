@@ -72,11 +72,30 @@
             </div>
         </section>
 
+        <!-- Vendor Rules Section -->
+        <section class="rules-section">
+            <div class="rules-header">
+                <h2>Vendor Rules</h2>
+                <button class="btn btn-small" onclick="toggleRules()"><span id="rules-toggle">Show</span></button>
+            </div>
+            <div id="rules-panel" class="rules-panel hidden">
+                <div class="rules-add">
+                    <input id="rule-pattern" placeholder="Pattern (e.g. AMZN MKTP)" class="rule-input">
+                    <input id="rule-vendor" placeholder="Vendor (e.g. Amazon)" class="rule-input">
+                    <button class="btn btn-small btn-primary" onclick="addRule()">Add Rule</button>
+                </div>
+                <div id="rules-list"></div>
+            </div>
+        </section>
+
         <!-- Transactions Table -->
         <section class="table-section">
             <div class="table-header">
                 <h2>Transactions <span id="table-count"></span></h2>
                 <div class="table-controls">
+                    <label class="raw-toggle">
+                        <input type="checkbox" id="show-raw-desc" onchange="toggleRawDesc()"> Raw Description
+                    </label>
                     <div class="toggle-group">
                         <button class="btn btn-small active" data-tview="all" onclick="switchTableView('all')">All</button>
                         <button class="btn btn-small" data-tview="monthly" onclick="switchTableView('monthly')">By Month</button>
@@ -89,7 +108,8 @@
                     <thead>
                         <tr>
                             <th class="sortable" data-sort="transaction_date">Date <span class="sort-arrow">↕</span></th>
-                            <th class="sortable" data-sort="description">Description <span class="sort-arrow">↕</span></th>
+                            <th class="sortable" data-sort="vendor">Vendor <span class="sort-arrow">↕</span></th>
+                            <th class="sortable raw-col hidden" data-sort="description">Raw Description <span class="sort-arrow">↕</span></th>
                             <th class="sortable" data-sort="cardholder">Cardholder <span class="sort-arrow">↕</span></th>
                             <th class="sortable num" data-sort="amount">Amount <span class="sort-arrow">↕</span></th>
                             <th class="sortable num" data-sort="points">Points <span class="sort-arrow">↕</span></th>
