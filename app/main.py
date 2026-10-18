@@ -13,8 +13,9 @@ from fastapi.templating import Jinja2Templates
 from database import init_db, db, insert_statement, insert_transactions
 from database import get_transactions, get_daily_spending, get_monthly_spending, get_spending_by_category
 from database import get_spending_by_vendor, get_points_over_time, get_statements
-from database import delete_statement, get_transaction_count
+from database import delete_statement, get_transaction_count, get_spending_by_custom_category
 from parser import parse_amex_pdf
+from categories import categorize
 
 app = FastAPI(title="Credit Card Dashboard")
 
@@ -46,6 +47,10 @@ def ingest_pdf(pdf_path: Path) -> dict | None:
 
     if not result["transactions"]:
         return None
+
+    # Add auto-categories
+    for t in result["transactions"]:
+        t["category"] = categorize(t["description"])
 
     closing = result["header"].get("closing_date", "")
     statement_date = closing if closing else "unknown"
@@ -163,6 +168,16 @@ async def api_monthly_spending(
 ):
     with db() as conn:
         data = get_monthly_spending(conn, start, end, card)
+    return {"data": data}
+
+
+@app.get("/api/spending/categories")
+async def api_custom_categories(
+    start: str = Query(None),
+    end: str = Query(None),
+):
+    with db() as conn:
+        data = get_spending_by_custom_category(conn, start, end)
     return {"data": data}
 
 

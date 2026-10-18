@@ -53,6 +53,7 @@ def init_db():
             points INTEGER DEFAULT 0,
             points_rate INTEGER DEFAULT 0,
             points_category TEXT DEFAULT '',
+            category TEXT DEFAULT '',
             FOREIGN KEY (statement_id) REFERENCES statements(id) ON DELETE CASCADE
         );
 
@@ -86,8 +87,8 @@ def insert_transactions(conn: sqlite3.Connection, statement_id: int, card: str, 
     conn.executemany(
         """INSERT INTO transactions
            (statement_id, card, transaction_date, posting_date, cardholder,
-            description, amount, points, points_rate, points_category)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            description, amount, points, points_rate, points_category, category)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             (
                 statement_id,
@@ -100,6 +101,7 @@ def insert_transactions(conn: sqlite3.Connection, statement_id: int, card: str, 
                 t.get("points", 0),
                 t.get("points_rate", 0),
                 t.get("points_category", ""),
+                t.get("category", ""),
             )
             for t in txns
         ],
@@ -140,7 +142,7 @@ def get_transactions(
     rows = conn.execute(
         f"""SELECT t.id, t.transaction_date, t.posting_date, t.cardholder,
                    t.description, t.amount, t.points, t.points_rate,
-                   t.points_category, t.card
+                   t.points_category, t.category, t.card
             FROM transactions t
             WHERE {where}
             ORDER BY t.transaction_date DESC, t.id DESC
@@ -218,6 +220,28 @@ def get_spending_by_category(conn: sqlite3.Connection, start_date: str = None, e
             WHERE {where}
             GROUP BY t.points_category, t.transaction_date
             ORDER BY t.transaction_date""",
+        params,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_spending_by_custom_category(conn: sqlite3.Connection, start_date: str = None, end_date: str = None) -> list[dict]:
+    conditions = ["t.amount > 0", "t.category != ''"]
+    params = []
+    if start_date:
+        conditions.append("t.transaction_date >= ?")
+        params.append(start_date)
+    if end_date:
+        conditions.append("t.transaction_date <= ?")
+        params.append(end_date)
+
+    where = " AND ".join(conditions)
+    rows = conn.execute(
+        f"""SELECT t.category, SUM(t.amount) as total, COUNT(*) as count
+            FROM transactions t
+            WHERE {where}
+            GROUP BY t.category
+            ORDER BY total DESC""",
         params,
     ).fetchall()
     return [dict(r) for r in rows]

@@ -74,17 +74,27 @@
 
         <!-- Transactions Table -->
         <section class="table-section">
-            <h2>Transactions <span id="table-count"></span></h2>
+            <div class="table-header">
+                <h2>Transactions <span id="table-count"></span></h2>
+                <div class="table-controls">
+                    <div class="toggle-group">
+                        <button class="btn btn-small active" data-tview="all" onclick="switchTableView('all')">All</button>
+                        <button class="btn btn-small" data-tview="monthly" onclick="switchTableView('monthly')">By Month</button>
+                    </div>
+                    <select id="month-select" class="month-select hidden" onchange="filterByMonth(this.value)"></select>
+                </div>
+            </div>
             <div class="table-scroll">
                 <table id="txn-table">
                     <thead>
                         <tr>
-                            <th>Date</th>
-                            <th>Description</th>
-                            <th>Cardholder</th>
-                            <th class="num">Amount</th>
-                            <th class="num">Points</th>
-                            <th>Category</th>
+                            <th class="sortable" data-sort="transaction_date">Date <span class="sort-arrow">↕</span></th>
+                            <th class="sortable" data-sort="description">Description <span class="sort-arrow">↕</span></th>
+                            <th class="sortable" data-sort="cardholder">Cardholder <span class="sort-arrow">↕</span></th>
+                            <th class="sortable num" data-sort="amount">Amount <span class="sort-arrow">↕</span></th>
+                            <th class="sortable num" data-sort="points">Points <span class="sort-arrow">↕</span></th>
+                            <th class="sortable" data-sort="category">Category <span class="sort-arrow">↕</span></th>
+                            <th class="sortable" data-sort="points_category">Points Cat <span class="sort-arrow">↕</span></th>
                             <th>Card</th>
                         </tr>
                     </thead>
