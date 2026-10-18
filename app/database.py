@@ -175,6 +175,31 @@ def get_daily_spending(conn: sqlite3.Connection, start_date: str = None, end_dat
     return [dict(r) for r in rows]
 
 
+def get_monthly_spending(conn: sqlite3.Connection, start_date: str = None, end_date: str = None, card: str = None) -> list[dict]:
+    conditions = ["t.amount > 0"]
+    params = []
+    if start_date:
+        conditions.append("t.transaction_date >= ?")
+        params.append(start_date)
+    if end_date:
+        conditions.append("t.transaction_date <= ?")
+        params.append(end_date)
+    if card:
+        conditions.append("t.card = ?")
+        params.append(card)
+
+    where = " AND ".join(conditions)
+    rows = conn.execute(
+        f"""SELECT substr(t.transaction_date, 1, 7) as month, SUM(t.amount) as total
+            FROM transactions t
+            WHERE {where}
+            GROUP BY substr(t.transaction_date, 1, 7)
+            ORDER BY month""",
+        params,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_spending_by_category(conn: sqlite3.Connection, start_date: str = None, end_date: str = None) -> list[dict]:
     conditions = ["t.amount > 0"]
     params = []

@@ -106,25 +106,35 @@ main { max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem; }
 
 .chart-controls {
     display: flex;
-    gap: 0.5rem;
+    gap: 1rem;
     margin-bottom: 1rem;
     flex-wrap: wrap;
+    align-items: center;
 }
 
-.chart-controls .btn-small {
-    background: var(--surface);
+.toggle-group {
+    display: flex;
+    gap: 0.25rem;
+    background: var(--bg);
+    border-radius: 0.5rem;
+    padding: 0.2rem;
     border: 1px solid var(--border);
-    color: var(--text-dim);
 }
 
-.chart-controls .btn-small.active {
+.toggle-group .btn-small {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    border-radius: 0.375rem;
+    padding: 0.3rem 0.65rem;
+}
+
+.toggle-group .btn-small.active {
     background: var(--primary);
-    border-color: var(--primary);
     color: white;
 }
 
-.chart-controls .btn-small:hover:not(.active) {
-    border-color: var(--text-dim);
+.toggle-group .btn-small:hover:not(.active) {
     color: var(--text);
 }
 

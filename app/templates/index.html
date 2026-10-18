@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 </head>
 <body>
     <header>
@@ -57,11 +56,16 @@
         <!-- Chart Section -->
         <section class="chart-section">
             <div class="chart-controls">
-                <button class="btn btn-small active" data-chart="daily" onclick="switchChart('daily')">Total Spending</button>
-                <button class="btn btn-small" data-chart="category" onclick="switchChart('category')">By Category</button>
-                <button class="btn btn-small" data-chart="vendor" onclick="switchChart('vendor')">By Vendor</button>
-                <button class="btn btn-small" data-chart="points" onclick="switchChart('points')">Points Over Time</button>
-                <button class="btn btn-small btn-secondary" onclick="resetZoom()">Reset Zoom</button>
+                <div class="toggle-group">
+                    <button class="btn btn-small active" data-view="daily" onclick="switchView('daily')">Daily</button>
+                    <button class="btn btn-small" data-view="monthly" onclick="switchView('monthly')">Monthly</button>
+                </div>
+                <div class="toggle-group">
+                    <button class="btn btn-small active" data-chart="spending" onclick="switchChart('spending')">Spending</button>
+                    <button class="btn btn-small" data-chart="category" onclick="switchChart('category')">By Category</button>
+                    <button class="btn btn-small" data-chart="vendor" onclick="switchChart('vendor')">By Vendor</button>
+                    <button class="btn btn-small" data-chart="points" onclick="switchChart('points')">Points</button>
+                </div>
             </div>
             <div class="chart-container">
                 <canvas id="main-chart"></canvas>

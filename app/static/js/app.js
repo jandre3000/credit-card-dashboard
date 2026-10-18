@@ -1,8 +1,9 @@
 /* Credit Card Dashboard — Frontend */
 const API = '';
 let mainChart = null;
-let currentChartType = 'daily';
-let allData = { transactions: [], daily: [], category: [], vendor: [], points: [] };
+let currentChart = 'spending';
+let currentView = 'daily';
+let allData = { transactions: [], daily: [], monthly: [], category: [], vendor: [], points: [] };
 
 const CATEGORY_COLORS = {
     'Eligible Food/Drink': '#22c55e',
@@ -26,9 +27,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadAllData() {
     const params = getFilterParams();
-    const [txns, daily, cat, vendor, points, stmts] = await Promise.all([
+    const [txns, daily, monthly, cat, vendor, points, stmts] = await Promise.all([
         fetchJSON(`/api/transactions${params}`),
         fetchJSON(`/api/spending/daily${params}`),
+        fetchJSON(`/api/spending/monthly${params}`),
         fetchJSON(`/api/spending/category${params}`),
         fetchJSON(`/api/spending/vendor${params}`),
         fetchJSON(`/api/points${params}`),
@@ -37,6 +39,7 @@ async function loadAllData() {
 
     allData.transactions = txns.transactions;
     allData.daily = daily.data;
+    allData.monthly = monthly.data;
     allData.category = cat.data;
     allData.vendor = vendor.data;
     allData.points = points.data;
@@ -44,7 +47,7 @@ async function loadAllData() {
     document.getElementById('txn-count').textContent = `${stmts.transaction_count} transactions`;
     renderTransactions(allData.transactions);
     renderStatements(stmts.statements);
-    renderChart(currentChartType);
+    renderChart();
 }
 
 function getFilterParams() {
@@ -64,176 +67,187 @@ function clearFilters() {
     loadAllData();
 }
 
-// ── Charts ────────────────────────────────────────────────────────
+// ── Chart Controls ────────────────────────────────────────────────
 
-function switchChart(type) {
-    currentChartType = type;
-    document.querySelectorAll('.chart-controls .btn-small').forEach(b => {
-        b.classList.toggle('active', b.dataset.chart === type);
+function switchView(view) {
+    currentView = view;
+    document.querySelectorAll('[data-view]').forEach(b => {
+        b.classList.toggle('active', b.dataset.view === view);
     });
-    renderChart(type);
+    renderChart();
 }
 
-function renderChart(type) {
+function switchChart(chart) {
+    currentChart = chart;
+    document.querySelectorAll('[data-chart]').forEach(b => {
+        b.classList.toggle('active', b.dataset.chart === chart);
+    });
+    // Show/hide daily/monthly toggle based on chart type
+    const toggleGroup = document.querySelector('.toggle-group');
+    if (toggleGroup) {
+        toggleGroup.style.display = chart === 'spending' ? '' : 'none';
+    }
+    renderChart();
+}
+
+// ── Charts ────────────────────────────────────────────────────────
+
+function renderChart() {
     if (mainChart) mainChart.destroy();
 
     const ctx = document.getElementById('main-chart').getContext('2d');
 
-    switch (type) {
-        case 'daily':   renderDailyChart(ctx); break;
+    switch (currentChart) {
+        case 'spending': currentView === 'daily' ? renderDailyChart(ctx) : renderMonthlyChart(ctx); break;
         case 'category': renderCategoryChart(ctx); break;
-        case 'vendor':  renderVendorChart(ctx); break;
-        case 'points':  renderPointsChart(ctx); break;
+        case 'vendor':   renderVendorChart(ctx); break;
+        case 'points':   renderPointsChart(ctx); break;
     }
 }
 
 function renderDailyChart(ctx) {
     const data = allData.daily;
     mainChart = new Chart(ctx, {
-        type: 'line',
+        type: 'bar',
         data: {
             labels: data.map(d => d.date),
             datasets: [{
                 label: 'Daily Spending',
                 data: data.map(d => d.total),
+                backgroundColor: '#6366f180',
                 borderColor: '#6366f1',
-                backgroundColor: 'rgba(99,102,241,0.1)',
-                fill: true,
-                tension: 0.3,
-                pointRadius: 2,
+                borderWidth: 1,
+                borderRadius: 2,
             }],
         },
-        options: chartOptions('$'),
+        options: spendingChartOptions('$'),
+    });
+}
+
+function renderMonthlyChart(ctx) {
+    const data = allData.monthly;
+    mainChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.month),
+            datasets: [{
+                label: 'Monthly Spending',
+                data: data.map(d => d.total),
+                backgroundColor: '#6366f180',
+                borderColor: '#6366f1',
+                borderWidth: 1,
+                borderRadius: 4,
+            }],
+        },
+        options: spendingChartOptions('$'),
     });
 }
 
 function renderCategoryChart(ctx) {
-    const byDate = {};
-    const cats = new Set();
+    // Aggregate by category across all dates
+    const catTotals = {};
     allData.category.forEach(d => {
-        if (!byDate[d.date]) byDate[d.date] = {};
-        byDate[d.date][d.category] = d.total;
-        cats.add(d.category);
+        catTotals[d.category] = (catTotals[d.category] || 0) + d.total;
     });
 
-    const dates = Object.keys(byDate).sort();
-    const datasets = [...cats].map(cat => ({
-        label: cat,
-        data: dates.map(d => byDate[d][cat] || 0),
-        borderColor: CATEGORY_COLORS[cat] || '#999',
-        backgroundColor: 'transparent',
-        tension: 0.3,
-        pointRadius: 1,
-    }));
+    const cats = Object.keys(catTotals).sort((a, b) => catTotals[b] - catTotals[a]);
+    const colors = cats.map(c => CATEGORY_COLORS[c] || '#999');
 
     mainChart = new Chart(ctx, {
-        type: 'line',
-        data: { labels: dates, datasets },
-        options: chartOptions('$'),
+        type: 'bar',
+        data: {
+            labels: cats,
+            datasets: [{
+                label: 'Total Spend',
+                data: cats.map(c => catTotals[c]),
+                backgroundColor: colors.map(c => c + '80'),
+                borderColor: colors,
+                borderWidth: 1,
+                borderRadius: 4,
+            }],
+        },
+        options: spendingChartOptions('$'),
     });
 }
 
 function renderVendorChart(ctx) {
-    const byDate = {};
-    const vendors = new Set();
+    // Aggregate by vendor
+    const vendorTotals = {};
     allData.vendor.forEach(d => {
-        if (!byDate[d.date]) byDate[d.date] = {};
-        byDate[d.date][d.vendor] = d.total;
-        vendors.add(d.vendor);
+        vendorTotals[d.vendor] = (vendorTotals[d.vendor] || 0) + d.total;
     });
 
-    const dates = Object.keys(byDate).sort();
-    const vendorList = [...vendors];
-    const datasets = vendorList.map((v, i) => ({
-        label: v.length > 30 ? v.substring(0, 30) + '…' : v,
-        data: dates.map(d => byDate[d][v] || 0),
-        borderColor: VENDOR_COLORS[i % VENDOR_COLORS.length],
-        backgroundColor: 'transparent',
-        tension: 0.3,
-        pointRadius: 1,
-    }));
+    const vendors = Object.keys(vendorTotals).sort((a, b) => vendorTotals[b] - vendorTotals[a]);
+    const colors = vendors.map((_, i) => VENDOR_COLORS[i % VENDOR_COLORS.length]);
 
     mainChart = new Chart(ctx, {
-        type: 'line',
-        data: { labels: dates, datasets },
-        options: chartOptions('$'),
+        type: 'bar',
+        data: {
+            labels: vendors.map(v => v.length > 25 ? v.substring(0, 25) + '…' : v),
+            datasets: [{
+                label: 'Total Spend',
+                data: vendors.map(v => vendorTotals[v]),
+                backgroundColor: colors.map(c => c + '80'),
+                borderColor: colors,
+                borderWidth: 1,
+                borderRadius: 4,
+            }],
+        },
+        options: {
+            ...spendingChartOptions('$'),
+            indexAxis: 'y',
+            plugins: {
+                ...spendingChartOptions('$').plugins,
+                legend: { display: false },
+            },
+        },
     });
 }
 
 function renderPointsChart(ctx) {
-    const byDate = {};
-    const cats = new Set();
+    const catTotals = {};
+    const catColors = {};
     allData.points.forEach(d => {
-        if (!byDate[d.date]) byDate[d.date] = {};
-        byDate[d.date][d.category] = (byDate[d.date][d.category] || 0) + d.points;
-        cats.add(d.category);
+        catTotals[d.category] = (catTotals[d.category] || 0) + d.points;
+        catColors[d.category] = CATEGORY_COLORS[d.category] || '#999';
     });
 
-    const dates = Object.keys(byDate).sort();
-    const datasets = [...cats].map(cat => ({
-        label: cat,
-        data: dates.map(d => byDate[d][cat] || 0),
-        borderColor: CATEGORY_COLORS[cat] || '#999',
-        backgroundColor: 'transparent',
-        tension: 0.3,
-        pointRadius: 1,
-    }));
-
-    // Cumulative line
-    let cumulative = 0;
-    const cumulativeData = dates.map(d => {
-        const dayTotal = Object.values(byDate[d]).reduce((s, v) => s + v, 0);
-        cumulative += dayTotal;
-        return cumulative;
-    });
-    datasets.push({
-        label: 'Cumulative Points',
-        data: cumulativeData,
-        borderColor: '#f59e0b',
-        backgroundColor: 'rgba(245,158,11,0.1)',
-        fill: true,
-        tension: 0.3,
-        pointRadius: 0,
-        borderDash: [5, 3],
-    });
+    const cats = Object.keys(catTotals).sort((a, b) => catTotals[b] - catTotals[a]);
 
     mainChart = new Chart(ctx, {
-        type: 'line',
-        data: { labels: dates, datasets },
-        options: chartOptions('pts'),
+        type: 'bar',
+        data: {
+            labels: cats,
+            datasets: [{
+                label: 'Points Earned',
+                data: cats.map(c => catTotals[c]),
+                backgroundColor: cats.map(c => (catColors[c] || '#999') + '80'),
+                borderColor: cats.map(c => catColors[c] || '#999'),
+                borderWidth: 1,
+                borderRadius: 4,
+            }],
+        },
+        options: spendingChartOptions('pts'),
     });
 }
 
-function chartOptions(unit) {
+function spendingChartOptions(unit) {
     return {
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
             legend: {
-                display: true,
-                position: 'bottom',
-                labels: { color: '#9ca3af', boxWidth: 12, padding: 15, font: { size: 11 } },
+                display: false,
             },
             tooltip: {
                 callbacks: {
-                    label: ctx => `${ctx.dataset.label}: ${unit === '$' ? '$' : ''}${ctx.parsed.y.toLocaleString()}${unit === 'pts' ? ' pts' : ''}`,
-                },
-            },
-            zoom: {
-                pan: { enabled: true, mode: 'x' },
-                zoom: {
-                    wheel: { enabled: true },
-                    pinch: { enabled: true },
-                    drag: { enabled: true, backgroundColor: 'rgba(99,102,241,0.1)', borderColor: '#6366f1' },
-                    mode: 'x',
+                    label: ctx => `${unit === '$' ? '$' : ''}${ctx.parsed.y.toLocaleString()}${unit === 'pts' ? ' pts' : ''}`,
                 },
             },
         },
         scales: {
             x: {
-                type: 'time',
-                time: { unit: 'day', tooltipFormat: 'MMM d, yyyy' },
                 grid: { color: 'rgba(255,255,255,0.05)' },
                 ticks: { color: '#6b7280', maxTicksLimit: 20 },
             },
@@ -246,10 +260,6 @@ function chartOptions(unit) {
             },
         },
     };
-}
-
-function resetZoom() {
-    if (mainChart) mainChart.resetZoom();
 }
 
 // ── Transactions Table ────────────────────────────────────────────

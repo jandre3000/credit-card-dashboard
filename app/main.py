@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from database import init_db, db, insert_statement, insert_transactions
-from database import get_transactions, get_daily_spending, get_spending_by_category
+from database import get_transactions, get_daily_spending, get_monthly_spending, get_spending_by_category
 from database import get_spending_by_vendor, get_points_over_time, get_statements
 from database import delete_statement, get_transaction_count
 from parser import parse_amex_pdf
@@ -152,6 +152,17 @@ async def api_daily_spending(
 ):
     with db() as conn:
         data = get_daily_spending(conn, start, end, card)
+    return {"data": data}
+
+
+@app.get("/api/spending/monthly")
+async def api_monthly_spending(
+    start: str = Query(None),
+    end: str = Query(None),
+    card: str = Query(None),
+):
+    with db() as conn:
+        data = get_monthly_spending(conn, start, end, card)
     return {"data": data}
 
 
