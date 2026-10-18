@@ -14,6 +14,7 @@ from database import init_db, db, insert_statement, insert_transactions
 from database import get_transactions, get_daily_spending, get_monthly_spending, get_spending_by_category
 from database import get_spending_by_vendor, get_points_over_time, get_statements
 from database import delete_statement, get_transaction_count, get_spending_by_custom_category
+from database import reapply_vendor_rules
 from parser import parse_amex_pdf
 from categories import categorize
 from vendor_rules import load_rules, normalize_vendor, save_rules, add_rule, delete_rule
@@ -233,6 +234,8 @@ async def api_add_vendor_rule(data: dict):
     if not pattern or not vendor:
         raise HTTPException(400, "Both pattern and vendor are required")
     add_rule(pattern, vendor)
+    with db() as conn:
+        reapply_vendor_rules(conn)
     return {"status": "ok", "rules": load_rules()}
 
 
@@ -245,12 +248,16 @@ async def api_update_vendor_rule(data: dict):
         raise HTTPException(400, "old_pattern, pattern, and vendor are required")
     from vendor_rules import update_rule
     update_rule(old_pattern, new_pattern, vendor)
+    with db() as conn:
+        reapply_vendor_rules(conn)
     return {"status": "ok", "rules": load_rules()}
 
 
 @app.delete("/api/vendor-rules/{pattern:path}")
 async def api_delete_vendor_rule(pattern: str):
     delete_rule(pattern)
+    with db() as conn:
+        reapply_vendor_rules(conn)
     return {"status": "ok", "rules": load_rules()}
 
 

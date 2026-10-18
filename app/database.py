@@ -211,6 +211,17 @@ def get_monthly_spending(conn: sqlite3.Connection, start_date: str = None, end_d
     return [dict(r) for r in rows]
 
 
+def reapply_vendor_rules(conn: sqlite3.Connection):
+    """Re-normalize vendor on all transactions using current rules."""
+    from vendor_rules import load_rules, normalize_vendor
+    rules = load_rules()
+    rows = conn.execute("SELECT id, description FROM transactions").fetchall()
+    for row in rows:
+        vendor = normalize_vendor(row["description"], rules)
+        conn.execute("UPDATE transactions SET vendor = ? WHERE id = ?", (vendor, row["id"]))
+    conn.commit()
+
+
 def get_spending_by_category(conn: sqlite3.Connection, start_date: str = None, end_date: str = None) -> list[dict]:
     conditions = ["t.amount > 0"]
     params = []
