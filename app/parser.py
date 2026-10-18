@@ -22,7 +22,16 @@ def parse_amex_pdf(pdf_path: str) -> dict:
 
     header = _parse_header(pages)
     year = header.get("year", "2026")
-    transactions = _parse_transactions(pages, year)
+    opening_month = header.get("opening_month")
+    closing_month = header.get("closing_month")
+
+    # Detect year boundary: if opening month > closing month (e.g. Dec→Jan),
+    # transactions with month > closing month belong to the previous year
+    prev_year = None
+    if opening_month and closing_month and opening_month > closing_month:
+        prev_year = str(int(year) - 1)
+
+    transactions = _parse_transactions(pages, year, prev_year, closing_month)
     points_entries = _parse_points(pages)
     transactions = _match_points(transactions, points_entries)
 
@@ -48,25 +57,38 @@ def _parse_header(pages: list[str]) -> dict:
         year_m = re.search(r"(\d{4})", m.group(2))
         if year_m:
             info["year"] = year_m.group(1)
+        # Extract month numbers for year boundary detection
+        open_m = re.match(r"(\w{3})", m.group(1))
+        close_m = re.match(r"(\w{3})", m.group(2))
+        if open_m:
+            info["opening_month"] = int(MONTHS.get(open_m.group(1), "0"))
+        if close_m:
+            info["closing_month"] = int(MONTHS.get(close_m.group(1), "0"))
     info["cardholder"] = "JAN DREWNIAK"
     return info
 
 
-def _parse_date(date_str: str, year: str) -> str:
+def _parse_date(date_str: str, year: str, prev_year: str = None, closing_month: int = None) -> str:
     m = re.match(r"(\w{3})(\d{1,2})", date_str)
     if not m:
         return ""
     month_num = MONTHS.get(m.group(1))
     if not month_num:
         return ""
-    return f"{year}-{month_num}-{int(m.group(2)):02d}"
+    month_int = int(month_num)
+    # If prev_year is set, transactions in months after the closing month
+    # belong to the previous year (year boundary: Dec→Jan)
+    actual_year = year
+    if prev_year and closing_month and month_int > closing_month:
+        actual_year = prev_year
+    return f"{actual_year}-{month_num}-{int(m.group(2)):02d}"
 
 
 def _is_payment(desc: str) -> bool:
     return any(kw in desc.upper() for kw in PAYMENT_KEYWORDS)
 
 
-def _parse_transactions(pages: list[str], year: str) -> list[dict]:
+def _parse_transactions(pages: list[str], year: str, prev_year: str = None, closing_month: int = None) -> list[dict]:
     pattern = re.compile(r"^(\w{3}\d{1,2})\s+(\w{3}\d{1,2})\s+(.+?)\s+(-?[\d,]+\.\d{2})$")
     cardholder = "JAN DREWNIAK"
     transactions = []
@@ -97,8 +119,8 @@ def _parse_transactions(pages: list[str], year: str) -> list[dict]:
             if _is_payment(desc_clean):
                 continue
 
-            txn_date = _parse_date(txn_date_raw, year)
-            post_date = _parse_date(post_date_raw, year)
+            txn_date = _parse_date(txn_date_raw, year, prev_year, closing_month)
+            post_date = _parse_date(post_date_raw, year, prev_year, closing_month)
             if not txn_date:
                 continue
 
