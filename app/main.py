@@ -239,7 +239,7 @@ async def api_add_vendor_rule(data: dict):
     vendor = data.get("vendor", "").strip()
     if not pattern or not vendor:
         raise HTTPException(400, "Both pattern and vendor are required")
-    add_rule(pattern, vendor)
+    add_rule(pattern, vendor, category)
     with db() as conn:
         reapply_vendor_rules(conn)
     return {"status": "ok", "rules": load_rules()}
@@ -250,10 +250,11 @@ async def api_update_vendor_rule(data: dict):
     old_pattern = data.get("old_pattern", "").strip()
     new_pattern = data.get("pattern", "").strip()
     vendor = data.get("vendor", "").strip()
+    category = data.get("category", "").strip()
     if not old_pattern or not new_pattern or not vendor:
         raise HTTPException(400, "old_pattern, pattern, and vendor are required")
     from vendor_rules import update_rule
-    update_rule(old_pattern, new_pattern, vendor)
+    update_rule(old_pattern, new_pattern, vendor, category)
     with db() as conn:
         reapply_vendor_rules(conn)
     return {"status": "ok", "rules": load_rules()}
