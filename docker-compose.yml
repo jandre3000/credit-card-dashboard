@@ -10,4 +10,5 @@ services:
     environment:
       - DB_PATH=/app/data/credit_cards.db
       - STATEMENTS_DIR=/app/statements
+      - DATA_DIR=/app/data
     restart: unless-stopped

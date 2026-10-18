@@ -11,6 +11,7 @@ RUN mkdir -p /app/data /app/statements
 
 ENV DB_PATH=/app/data/credit_cards.db
 ENV STATEMENTS_DIR=/app/statements
+ENV DATA_DIR=/app/data
 
 EXPOSE 8000
 
