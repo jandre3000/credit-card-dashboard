@@ -147,6 +147,33 @@ main { max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem; }
     position: relative;
 }
 
+.pie-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.pie-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+}
+
+.pie-card h3 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin-bottom: 0.5rem;
+    text-align: center;
+}
+
+.chart-container-sm {
+    position: relative;
+    height: 250px;
+}
+
 /* Table */
 .table-section {
     margin-bottom: 2rem;

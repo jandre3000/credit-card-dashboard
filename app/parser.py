@@ -219,7 +219,7 @@ def _match_points(transactions: list[dict], points_entries: list[dict]) -> list[
                     break
 
         if not matched:
-            txn["points"] = int(round(abs(txn["amount"])))
+            txn["points"] = int(round(txn["amount"]))
             txn["points_rate"] = 1
             txn["points_category"] = "All Other Purchases"
 

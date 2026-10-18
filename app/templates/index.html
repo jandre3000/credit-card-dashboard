@@ -55,16 +55,24 @@
 
         <!-- Chart Section -->
         <section class="chart-section">
+            <div class="pie-row">
+                <div class="pie-card">
+                    <h3>By Category</h3>
+                    <div class="chart-container-sm"><canvas id="category-chart"></canvas></div>
+                </div>
+                <div class="pie-card">
+                    <h3>By Vendor</h3>
+                    <div class="chart-container-sm"><canvas id="vendor-chart"></canvas></div>
+                </div>
+                <div class="pie-card">
+                    <h3>Points</h3>
+                    <div class="chart-container-sm"><canvas id="points-chart"></canvas></div>
+                </div>
+            </div>
             <div class="chart-controls">
                 <div class="toggle-group">
-                    <button class="btn btn-small active" data-view="daily" onclick="switchView('daily')">Daily</button>
-                    <button class="btn btn-small" data-view="monthly" onclick="switchView('monthly')">Monthly</button>
-                </div>
-                <div class="toggle-group">
-                    <button class="btn btn-small active" data-chart="spending" onclick="switchChart('spending')">Spending</button>
-                    <button class="btn btn-small" data-chart="category" onclick="switchChart('category')">By Category</button>
-                    <button class="btn btn-small" data-chart="vendor" onclick="switchChart('vendor')">By Vendor</button>
-                    <button class="btn btn-small" data-chart="points" onclick="switchChart('points')">Points</button>
+                    <button class="btn btn-small" data-view="daily" onclick="switchView('daily')">Daily</button>
+                    <button class="btn btn-small active" data-view="monthly" onclick="switchView('monthly')">Monthly</button>
                 </div>
             </div>
             <div class="chart-container">
@@ -158,7 +166,6 @@
                             <th class="sortable" data-sort="transaction_date">Date <span class="sort-arrow">↕</span></th>
                             <th class="sortable" data-sort="vendor">Vendor <span class="sort-arrow">↕</span></th>
                             <th class="sortable raw-col hidden" data-sort="description">Raw Description <span class="sort-arrow">↕</span></th>
-                            <th class="sortable" data-sort="cardholder">Cardholder <span class="sort-arrow">↕</span></th>
                             <th class="sortable num" data-sort="amount">Amount <span class="sort-arrow">↕</span></th>
                             <th class="sortable num" data-sort="points">Points <span class="sort-arrow">↕</span></th>
                             <th class="sortable" data-sort="category">Category <span class="sort-arrow">↕</span></th>

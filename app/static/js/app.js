@@ -1,8 +1,7 @@
 /* Credit Card Dashboard — Frontend */
 const API = '';
-let mainChart = null;
-let currentChart = 'spending';
-let currentView = 'daily';
+let mainChart = null, categoryChart = null, vendorChart = null, pointsChart = null;
+let currentView = 'monthly';
 let currentTableView = 'all';
 let sortColumn = 'transaction_date';
 let sortDirection = 'desc';
@@ -57,7 +56,8 @@ async function loadAllData() {
     allData.categories = cats.data; allData.vendor = vendor.data;
     allData.points = points.data;
     document.getElementById('txn-count').textContent = `${stmts.transaction_count} transactions`;
-    buildMonthSelect(); renderTransactions(); renderStatements(stmts.statements); renderChart();
+    buildMonthSelect(); renderTransactions(); renderStatements(stmts.statements);
+    renderMainChart(); renderPieCharts();
 }
 
 function getFilterParams() {
@@ -105,6 +105,15 @@ function switchTableView(view) {
 
 function filterByMonth(month) { selectedMonth = month; renderTransactions(); }
 
+function filterByChartMonth(month) {
+    selectedMonth = month;
+    currentTableView = 'monthly';
+    document.querySelectorAll('[data-tview]').forEach(b => b.classList.toggle('active', b.dataset.tview === 'monthly'));
+    document.getElementById('month-select').classList.toggle('hidden', false);
+    document.getElementById('month-select').value = month;
+    renderTransactions();
+}
+
 // ── Raw Description Toggle ────────────────────────────────────────
 
 function toggleRawDesc() {
@@ -121,10 +130,8 @@ async function loadCategoryList() {
 }
 
 function populateCatDropdowns() {
-    // Rules form dropdown
     const sel = document.getElementById('rule-category');
     if (sel) sel.innerHTML = catDropdownOptions('');
-    // Vendor modal dropdown
     const vm = document.getElementById('vm-category');
     if (vm) vm.innerHTML = catDropdownOptions('');
 }
@@ -134,9 +141,7 @@ function catDropdownOptions(selected) {
         categoryList.map(c => `<option value="${escHtml(c)}"${c === selected ? ' selected' : ''}>${escHtml(c)}</option>`).join('');
 }
 
-function catCssClass(cat) {
-    return `cat-${(cat||'other').toLowerCase().replace(/[^a-z]/g,'')}`;
-}
+function catCssClass(cat) { return `cat-${(cat||'other').toLowerCase().replace(/[^a-z]/g,'')}`; }
 
 function toggleCategories() {
     const panel = document.getElementById('cats-panel');
@@ -180,7 +185,7 @@ async function editCategoryName(index) {
 
 async function deleteCategory(index) {
     const name = categoryList[index];
-    if (!confirm(`Delete category "${name}"? Transactions with this category will keep it.`)) return;
+    if (!confirm(`Delete category "${name}"?`)) return;
     categoryList.splice(index, 1);
     await fetchJSON_withMethod('PUT', '/api/categories', { categories: categoryList });
     populateCatDropdowns(); renderCategories();
@@ -244,18 +249,14 @@ function showVendorModal(title, pattern, vendor, category, oldPattern) {
     document.getElementById('vendor-modal-title').textContent = title;
     document.getElementById('vm-pattern').value = pattern || '';
     document.getElementById('vm-vendor').value = vendor || '';
-    document.getElementById('vm-category').value = category || '';
     document.getElementById('vm-old-pattern').value = oldPattern || '';
     populateCatDropdowns();
-    // Re-set category after dropdown populated
     document.getElementById('vm-category').value = category || '';
     document.getElementById('vendor-modal').classList.remove('hidden');
     document.getElementById('vm-pattern').focus();
 }
 
-function hideVendorModal() {
-    document.getElementById('vendor-modal').classList.add('hidden');
-}
+function hideVendorModal() { document.getElementById('vendor-modal').classList.add('hidden'); }
 
 async function submitVendorModal(e) {
     e.preventDefault();
@@ -264,12 +265,9 @@ async function submitVendorModal(e) {
     const category = document.getElementById('vm-category').value;
     const oldPattern = document.getElementById('vm-old-pattern').value;
     if (!pattern || !vendor) return;
-
     if (oldPattern) {
-        // Update existing rule
         await fetchJSON_withMethod('PUT', '/api/vendor-rules', { old_pattern: oldPattern, pattern, vendor, category });
     } else {
-        // Add new rule
         await fetchJSON_withMethod('POST', '/api/vendor-rules', { pattern, vendor, category });
     }
     hideVendorModal();
@@ -291,7 +289,6 @@ function editCategory(txnId, currentCat) {
     const td = event.target.closest('td');
     const existing = td.querySelector('select');
     if (existing) return;
-
     const select = document.createElement('select');
     select.innerHTML = catDropdownOptions(currentCat);
     select.value = currentCat;
@@ -301,69 +298,90 @@ function editCategory(txnId, currentCat) {
         await loadAllData();
     };
     select.onblur = () => { setTimeout(() => renderTransactions(), 200); };
-
     td.innerHTML = '';
     td.appendChild(select);
     select.focus();
 }
 
-// ── Chart Controls ────────────────────────────────────────────────
+// ── Charts ────────────────────────────────────────────────────────
 
 function switchView(view) {
     currentView = view;
     document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-    renderChart();
+    renderMainChart();
 }
 
-function switchChart(chart) {
-    currentChart = chart;
-    document.querySelectorAll('[data-chart]').forEach(b => b.classList.toggle('active', b.dataset.chart === chart));
-    const vt = document.querySelector('.toggle-group');
-    if (vt) vt.style.display = chart === 'spending' ? '' : 'none';
-    renderChart();
-}
-
-// ── Charts ────────────────────────────────────────────────────────
-
-function renderChart() {
+function renderMainChart() {
     if (mainChart) mainChart.destroy();
     const ctx = document.getElementById('main-chart').getContext('2d');
-    switch (currentChart) {
-        case 'spending': currentView === 'daily' ? renderDailyChart(ctx) : renderMonthlyChart(ctx); break;
-        case 'category': renderCategoryPie(ctx); break;
-        case 'vendor':   renderVendorPie(ctx); break;
-        case 'points':   renderPointsChart(ctx); break;
+    if (currentView === 'monthly') {
+        const data = allData.monthly;
+        mainChart = new Chart(ctx, {
+            type: 'bar',
+            data: { labels: data.map(d => formatMonth(d.month)), datasets: [{ label: 'Monthly Spending', data: data.map(d => d.total),
+                backgroundColor: '#6366f180', borderColor: '#6366f1', borderWidth: 1, borderRadius: 4 }] },
+            options: {
+                ...spendingOpts('$'),
+                onClick: (evt, elements) => {
+                    if (elements.length > 0) {
+                        const idx = elements[0].index;
+                        const month = allData.monthly[idx].month;
+                        filterByChartMonth(month);
+                    }
+                },
+                onHover: (evt, elements) => {
+                    evt.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
+                }
+            }
+        });
+    } else {
+        const data = allData.daily;
+        mainChart = new Chart(ctx, {
+            type: 'bar',
+            data: { labels: data.map(d => d.date), datasets: [{ label: 'Daily Spending', data: data.map(d => d.total),
+                backgroundColor: '#6366f180', borderColor: '#6366f1', borderWidth: 1, borderRadius: 2 }] },
+            options: spendingOpts('$')
+        });
     }
 }
 
-function renderDailyChart(ctx) {
-    const d = allData.daily;
-    mainChart = new Chart(ctx, { type:'bar', data:{labels:d.map(x=>x.date),datasets:[{label:'Daily',data:d.map(x=>x.total),backgroundColor:'#6366f180',borderColor:'#6366f1',borderWidth:1,borderRadius:2}]}, options:spendingOpts('$') });
-}
-function renderMonthlyChart(ctx) {
-    const d = allData.monthly;
-    mainChart = new Chart(ctx, { type:'bar', data:{labels:d.map(x=>formatMonth(x.month)),datasets:[{label:'Monthly',data:d.map(x=>x.total),backgroundColor:'#6366f180',borderColor:'#6366f1',borderWidth:1,borderRadius:4}]}, options:spendingOpts('$') });
-}
-function renderCategoryPie(ctx) {
-    const d = allData.categories, labels=d.map(x=>x.category), colors=labels.map(c=>CATEGORY_COLORS[c]||'#999');
-    mainChart = new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data:d.map(x=>x.total),backgroundColor:colors.map(c=>c+'cc'),borderColor:colors,borderWidth:1}]},options:pieOpts('$')});
-}
-function renderVendorPie(ctx) {
-    const d = allData.vendor;
-    // Aggregate by vendor name
-    const totals = {};
-    d.forEach(x => { totals[x.vendor_name] = (totals[x.vendor_name] || 0) + x.total; });
-    const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
-    const labels = sorted.map(([v]) => v.length > 20 ? v.substring(0, 20) + '…' : v);
-    const colors = labels.map((_, i) => VENDOR_COLORS[i % VENDOR_COLORS.length]);
-    mainChart = new Chart(ctx, { type: 'doughnut', data: { labels, datasets: [{ data: sorted.map(([, t]) => t),
-        backgroundColor: colors.map(c => c + 'cc'), borderColor: colors, borderWidth: 1 }] }, options: pieOpts('$') });
-}
-function renderPointsChart(ctx) {
-    const d=allData.points,totals={},colors={};
-    d.forEach(x=>{totals[x.category]=(totals[x.category]||0)+x.points;colors[x.category]=CATEGORY_COLORS[x.category]||'#999';});
-    const cats=Object.keys(totals).sort((a,b)=>totals[b]-totals[a]);
-    mainChart=new Chart(ctx,{type:'bar',data:{labels:cats,datasets:[{label:'Points',data:cats.map(c=>totals[c]),backgroundColor:cats.map(c=>(colors[c]||'#999')+'80'),borderColor:cats.map(c=>colors[c]||'#999'),borderWidth:1,borderRadius:4}]},options:spendingOpts('pts')});
+function renderPieCharts() {
+    // Category pie
+    if (categoryChart) categoryChart.destroy();
+    const catData = allData.categories;
+    const catLabels = catData.map(d => d.category);
+    const catColors = catLabels.map(c => CATEGORY_COLORS[c] || '#999');
+    categoryChart = new Chart(document.getElementById('category-chart').getContext('2d'), {
+        type: 'doughnut',
+        data: { labels: catLabels, datasets: [{ data: catData.map(d => d.total), backgroundColor: catColors.map(c => c + 'cc'), borderColor: catColors, borderWidth: 1 }] },
+        options: pieOpts('$')
+    });
+
+    // Vendor pie
+    if (vendorChart) vendorChart.destroy();
+    const vendData = allData.vendor;
+    const vendTotals = {};
+    vendData.forEach(x => { vendTotals[x.vendor_name] = (vendTotals[x.vendor_name] || 0) + x.total; });
+    const vendSorted = Object.entries(vendTotals).sort((a, b) => b[1] - a[1]);
+    const vendLabels = vendSorted.map(([v]) => v.length > 18 ? v.substring(0, 18) + '…' : v);
+    const vendColors = vendLabels.map((_, i) => VENDOR_COLORS[i % VENDOR_COLORS.length]);
+    vendorChart = new Chart(document.getElementById('vendor-chart').getContext('2d'), {
+        type: 'doughnut',
+        data: { labels: vendLabels, datasets: [{ data: vendSorted.map(([, t]) => t), backgroundColor: vendColors.map(c => c + 'cc'), borderColor: vendColors, borderWidth: 1 }] },
+        options: pieOpts('$')
+    });
+
+    // Points pie
+    if (pointsChart) pointsChart.destroy();
+    const ptsData = allData.points;
+    const ptsTotals = {}, ptsColors = {};
+    ptsData.forEach(d => { ptsTotals[d.category] = (ptsTotals[d.category] || 0) + d.points; ptsColors[d.category] = CATEGORY_COLORS[d.category] || '#999'; });
+    const ptsCats = Object.keys(ptsTotals).sort((a, b) => ptsTotals[b] - ptsTotals[a]);
+    pointsChart = new Chart(document.getElementById('points-chart').getContext('2d'), {
+        type: 'doughnut',
+        data: { labels: ptsCats, datasets: [{ data: ptsCats.map(c => ptsTotals[c]), backgroundColor: ptsCats.map(c => (ptsColors[c]||'#999')+'cc'), borderColor: ptsCats.map(c => ptsColors[c]||'#999'), borderWidth: 1 }] },
+        options: pieOpts('pts')
+    });
 }
 
 function spendingOpts(u) {
@@ -374,7 +392,7 @@ function spendingOpts(u) {
 }
 function pieOpts(u) {
     return {responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:true,position:'right',labels:{color:'#9ca3af',boxWidth:12,padding:10,font:{size:11}}},
+        plugins:{legend:{display:true,position:'right',labels:{color:'#9ca3af',boxWidth:10,padding:8,font:{size:10}}},
             tooltip:{callbacks:{label:c=>`${c.label}: ${u==='$'?'$':''}${c.parsed.toLocaleString()}${u==='pts'?' pts':''} (${((c.parsed/c.dataset.data.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`}}}};
 }
 
@@ -400,7 +418,6 @@ function renderTransactions() {
             <td>${t.transaction_date}</td>
             <td class="vendor-cell" onclick="saveVendorFromCell(${t.id},'${escAttr(t.description)}')" title="Click to create vendor rule">${escHtml(vd)}</td>
             <td class="raw-col${showRaw?'':' hidden'}">${escHtml(t.description)}</td>
-            <td>${escHtml(t.cardholder)}</td>
             <td class="num ${amt}">$${t.amount.toFixed(2)}</td>
             <td class="num"><span class="points-badge">${t.points}</span></td>
             <td class="cat-cell" onclick="editCategory(${t.id},'${escAttr(t.category)}')" title="Click to change"><span class="cat-badge ${cc}">${escHtml(t.category||'Other')}</span></td>
@@ -437,14 +454,9 @@ async function handleUpload(e){
     }catch(err){status.className='status error';status.textContent=`Error: ${err.message}`;}
 }
 
-// ── PDF Viewer ────────────────────────────────────────────────────
-
 function viewPdf(fn){document.getElementById('pdf-title').textContent=fn;document.getElementById('pdf-viewer').src=`${API}/api/pdf/${fn}`;document.getElementById('pdf-modal').classList.remove('hidden');}
 function hidePdf(){document.getElementById('pdf-modal').classList.add('hidden');document.getElementById('pdf-viewer').src='';}
-
 async function deleteStmt(id){if(!confirm('Delete this statement and all its transactions?'))return;await fetch(`${API}/api/statements/${id}`,{method:'DELETE'});loadAllData();}
-
-// ── Utils ─────────────────────────────────────────────────────────
 
 async function fetchJSON(u){return(await fetch(u)).json();}
 async function fetchJSON_withMethod(m,u,b){return(await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json();}
