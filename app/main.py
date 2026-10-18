@@ -237,6 +237,7 @@ async def api_get_vendor_rules():
 async def api_add_vendor_rule(data: dict):
     pattern = data.get("pattern", "").strip()
     vendor = data.get("vendor", "").strip()
+    category = data.get("category", "").strip()
     if not pattern or not vendor:
         raise HTTPException(400, "Both pattern and vendor are required")
     add_rule(pattern, vendor, category)
