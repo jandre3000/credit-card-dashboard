@@ -308,16 +308,18 @@ function hideUpload() {
 async function handleUpload(e) {
     e.preventDefault();
     const form = e.target;
-    const file = form.querySelector('input[type=file]').files[0];
-    if (!file) return;
+    const files = form.querySelector('input[type=file]').files;
+    if (!files.length) return;
 
     const status = document.getElementById('upload-status');
     status.className = 'status';
-    status.textContent = 'Uploading and parsing...';
+    status.textContent = `Uploading ${files.length} file(s)...`;
     status.classList.remove('hidden');
 
     const fd = new FormData();
-    fd.append('file', file);
+    for (const file of files) {
+        fd.append('files', file);
+    }
 
     try {
         const res = await fetch(`${API}/api/upload`, { method: 'POST', body: fd });
@@ -329,11 +331,22 @@ async function handleUpload(e) {
             return;
         }
 
-        status.className = 'status ok';
-        status.textContent = `✓ Parsed ${data.transactions} transactions — $${data.total_spend.toFixed(2)} spend, ${data.total_points.toLocaleString()} pts`;
+        const parts = [];
+        if (data.ingested > 0) {
+            const txns = data.results.reduce((s, r) => s + r.transactions, 0);
+            const spend = data.results.reduce((s, r) => s + r.total_spend, 0);
+            const pts = data.results.reduce((s, r) => s + r.total_points, 0);
+            parts.push(`✓ ${data.ingested} statement(s): ${txns} transactions, $${spend.toFixed(2)} spend, ${pts.toLocaleString()} pts`);
+        }
+        if (data.errors.length > 0) {
+            parts.push(`${data.errors.length} failed: ${data.errors.map(e => e.filename).join(', ')}`);
+        }
+
+        status.className = data.errors.length ? 'status error' : 'status ok';
+        status.textContent = parts.join(' · ') || 'No new statements to ingest';
         form.reset();
 
-        setTimeout(() => { hideUpload(); loadAllData(); }, 1500);
+        setTimeout(() => { hideUpload(); loadAllData(); }, 2000);
     } catch (err) {
         status.className = 'status error';
         status.textContent = `Error: ${err.message}`;

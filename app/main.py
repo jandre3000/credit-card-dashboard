@@ -1,4 +1,5 @@
 """Credit Card Statement Dashboard — FastAPI backend."""
+import asyncio
 import os
 import shutil
 from datetime import date
@@ -25,9 +26,68 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
+def ingest_pdf(pdf_path: Path) -> dict | None:
+    """Parse a PDF and insert into DB. Returns result dict or None if skipped/failed."""
+    if not pdf_path.name.lower().endswith(".pdf"):
+        return None
+
+    # Check if already ingested
+    with db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM statements WHERE filename = ?", (pdf_path.name,)
+        ).fetchone()
+        if existing:
+            return None
+
+    try:
+        result = parse_amex_pdf(str(pdf_path))
+    except Exception:
+        return None
+
+    if not result["transactions"]:
+        return None
+
+    closing = result["header"].get("closing_date", "")
+    statement_date = closing if closing else "unknown"
+
+    with db() as conn:
+        stmt_id = insert_statement(conn, {
+            "card": result["card"],
+            "statement_date": statement_date,
+            "opening_date": result["header"].get("opening_date"),
+            "closing_date": closing,
+            "cardholder": result["header"].get("cardholder"),
+            "total_spend": result["total_spend"],
+            "total_points": result["total_points"],
+            "filename": pdf_path.name,
+        })
+        insert_transactions(conn, stmt_id, result["card"], result["transactions"])
+
+    return {
+        "statement_id": stmt_id,
+        "filename": pdf_path.name,
+        "transactions": len(result["transactions"]),
+        "total_spend": result["total_spend"],
+        "total_points": result["total_points"],
+    }
+
+
+def scan_statements_folder():
+    """Scan statements/ for any PDFs not yet in the DB and ingest them."""
+    ingested = []
+    for pdf_path in STATEMENTS_DIR.glob("*.pdf"):
+        result = ingest_pdf(pdf_path)
+        if result:
+            ingested.append(result)
+    return ingested
+
+
 @app.on_event("startup")
 def startup():
     init_db()
+    results = scan_statements_folder()
+    if results:
+        print(f"Auto-ingested {len(results)} statement(s) from {STATEMENTS_DIR}")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -38,51 +98,32 @@ async def index(request: Request):
 # ── Statement Upload ──────────────────────────────────────────────
 
 @app.post("/api/upload")
-async def upload_statement(file: UploadFile = File(...)):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "Only PDF files accepted")
+async def upload_statements(files: list[UploadFile] = File(...)):
+    results = []
+    errors = []
 
-    # Save the uploaded PDF
-    dest = STATEMENTS_DIR / file.filename
-    with open(dest, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    for file in files:
+        if not file.filename.lower().endswith(".pdf"):
+            errors.append({"filename": file.filename, "error": "Not a PDF"})
+            continue
 
-    # Parse the statement
-    try:
-        result = parse_amex_pdf(str(dest))
-    except Exception as e:
-        dest.unlink(missing_ok=True)
-        raise HTTPException(422, f"Failed to parse statement: {e}")
+        # Save the uploaded PDF
+        dest = STATEMENTS_DIR / file.filename
+        with open(dest, "wb") as f:
+            shutil.copyfileobj(file.file, f)
 
-    if not result["transactions"]:
-        dest.unlink(missing_ok=True)
-        raise HTTPException(422, "No transactions found in PDF")
-
-    # Determine statement date (closing date)
-    closing = result["header"].get("closing_date", "")
-    statement_date = closing if closing else "unknown"
-
-    # Store in database
-    with db() as conn:
-        stmt_id = insert_statement(conn, {
-            "card": result["card"],
-            "statement_date": statement_date,
-            "opening_date": result["header"].get("opening_date"),
-            "closing_date": closing,
-            "cardholder": result["header"].get("cardholder"),
-            "total_spend": result["total_spend"],
-            "total_points": result["total_points"],
-            "filename": file.filename,
-        })
-        insert_transactions(conn, stmt_id, result["card"], result["transactions"])
+        # Parse and ingest
+        result = ingest_pdf(dest)
+        if result:
+            results.append(result)
+        else:
+            errors.append({"filename": file.filename, "error": "Failed to parse or already ingested"})
 
     return {
         "status": "ok",
-        "statement_id": stmt_id,
-        "filename": file.filename,
-        "transactions": len(result["transactions"]),
-        "total_spend": result["total_spend"],
-        "total_points": result["total_points"],
+        "ingested": len(results),
+        "results": results,
+        "errors": errors,
     }
 
 

@@ -289,6 +289,12 @@ tr:hover td { background: rgba(99, 102, 241, 0.05); }
 .status.ok { background: #22c55e22; color: var(--success); border: 1px solid #22c55e44; }
 .status.error { background: #ef444422; color: var(--danger); border: 1px solid #ef444444; }
 
+.hint {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-top: 0.25rem;
+}
+
 input[type="file"] {
     background: var(--bg);
     border: 1px solid var(--border);
