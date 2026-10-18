@@ -82,7 +82,14 @@
                 <div class="rules-add">
                     <input id="rule-pattern" placeholder="Pattern (e.g. AMZN MKTP)" class="rule-input">
                     <input id="rule-vendor" placeholder="Vendor (e.g. Amazon)" class="rule-input">
+                    <select id="rule-category" class="rule-input"></select>
                     <button class="btn btn-small btn-primary" onclick="addRule()">Add Rule</button>
+                </div>
+                <div class="rule-row rule-header-row">
+                    <span class="rule-pattern"><strong>Pattern</strong></span>
+                    <span class="rule-vendor"><strong>Vendor</strong></span>
+                    <span class="rule-cat"><strong>Category</strong></span>
+                    <span class="rule-actions"><strong>Actions</strong></span>
                 </div>
                 <div id="rules-list"></div>
             </div>

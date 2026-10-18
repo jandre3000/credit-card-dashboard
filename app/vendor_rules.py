@@ -32,12 +32,26 @@ def normalize_vendor(description: str, rules: list[dict] = None) -> str:
     return description.strip()
 
 
-def add_rule(pattern: str, vendor: str):
+def get_rule_category(description: str, rules: list[dict] = None) -> str:
+    """Return the category from the matching vendor rule, or '' if none."""
+    if rules is None:
+        rules = load_rules()
+    desc_upper = description.upper()
+    for rule in rules:
+        if rule["pattern"].upper() in desc_upper:
+            return rule.get("category", "")
+    return ""
+
+
+def add_rule(pattern: str, vendor: str, category: str = ""):
     """Add a new rule at the top (most specific first)."""
     rules = load_rules()
     # Remove any existing rule with the same pattern
     rules = [r for r in rules if r["pattern"].upper() != pattern.upper()]
-    rules.insert(0, {"pattern": pattern, "vendor": vendor})
+    rule = {"pattern": pattern, "vendor": vendor}
+    if category:
+        rule["category"] = category
+    rules.insert(0, rule)
     save_rules(rules)
 
 
@@ -48,9 +62,12 @@ def delete_rule(pattern: str):
     save_rules(rules)
 
 
-def update_rule(old_pattern: str, new_pattern: str, vendor: str):
+def update_rule(old_pattern: str, new_pattern: str, vendor: str, category: str = ""):
     """Update an existing rule."""
     rules = load_rules()
     rules = [r for r in rules if r["pattern"].upper() != old_pattern.upper()]
-    rules.insert(0, {"pattern": new_pattern, "vendor": vendor})
+    rule = {"pattern": new_pattern, "vendor": vendor}
+    if category:
+        rule["category"] = category
+    rules.insert(0, rule)
     save_rules(rules)

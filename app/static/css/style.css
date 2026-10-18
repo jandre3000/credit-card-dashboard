@@ -290,6 +290,19 @@ tr:hover td { background: rgba(99, 102, 241, 0.05); }
 .raw-col.hidden, .hidden { display: none; }
 .vendor-cell { cursor: pointer; }
 .vendor-cell:hover { background: rgba(99, 102, 241, 0.1); border-radius: 0.25rem; }
+.cat-cell { cursor: pointer; }
+.cat-cell:hover { background: rgba(99, 102, 241, 0.1); border-radius: 0.25rem; }
+.inline-cat-select {
+    background: var(--bg);
+    border: 1px solid var(--primary);
+    color: var(--text);
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    font-size: 0.8rem;
+    min-width: 120px;
+}
+.rule-cat { flex: 0.5; }
+.rule-header-row { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 0.25rem; }
 
 /* Statements */
 .statements-section h2 {

@@ -9,6 +9,7 @@ let sortDirection = 'desc';
 let selectedMonth = '';
 let allData = { transactions: [], daily: [], monthly: [], categories: [], vendor: [], points: [] };
 let vendorRules = [];
+let categoryList = [];
 
 const CATEGORY_COLORS = {
     'Grocery': '#22c55e', 'Dining & Drinks': '#f97316', 'Gas & Transit': '#f59e0b',
@@ -29,18 +30,14 @@ const VENDOR_COLORS = [
 document.addEventListener('DOMContentLoaded', () => {
     loadAllData();
     loadVendorRules();
+    loadCategoryList();
     document.getElementById('upload-form').addEventListener('submit', handleUpload);
 
-    // Sortable column headers
     document.querySelectorAll('.sortable').forEach(th => {
         th.addEventListener('click', () => {
             const col = th.dataset.sort;
-            if (sortColumn === col) {
-                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-            } else {
-                sortColumn = col;
-                sortDirection = col === 'transaction_date' ? 'desc' : 'asc';
-            }
+            if (sortColumn === col) { sortDirection = sortDirection === 'asc' ? 'desc' : 'asc'; }
+            else { sortColumn = col; sortDirection = col === 'transaction_date' ? 'desc' : 'asc'; }
             document.querySelectorAll('.sortable').forEach(h => h.classList.remove('asc', 'desc'));
             th.classList.add(sortDirection);
             renderTransactions();
@@ -51,45 +48,32 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadAllData() {
     const params = getFilterParams();
     const [txns, daily, monthly, cats, vendor, points, stmts] = await Promise.all([
-        fetchJSON(`/api/transactions${params}`),
-        fetchJSON(`/api/spending/daily${params}`),
-        fetchJSON(`/api/spending/monthly${params}`),
-        fetchJSON(`/api/spending/categories${params}`),
-        fetchJSON(`/api/spending/vendor${params}`),
-        fetchJSON(`/api/points${params}`),
+        fetchJSON(`/api/transactions${params}`), fetchJSON(`/api/spending/daily${params}`),
+        fetchJSON(`/api/spending/monthly${params}`), fetchJSON(`/api/spending/categories${params}`),
+        fetchJSON(`/api/spending/vendor${params}`), fetchJSON(`/api/points${params}`),
         fetchJSON('/api/statements'),
     ]);
-
     allData.transactions = txns.transactions;
-    allData.daily = daily.data;
-    allData.monthly = monthly.data;
-    allData.categories = cats.data;
-    allData.vendor = vendor.data;
+    allData.daily = daily.data; allData.monthly = monthly.data;
+    allData.categories = cats.data; allData.vendor = vendor.data;
     allData.points = points.data;
-
     document.getElementById('txn-count').textContent = `${stmts.transaction_count} transactions`;
-    buildMonthSelect();
-    renderTransactions();
-    renderStatements(stmts.statements);
-    renderChart();
+    buildMonthSelect(); renderTransactions(); renderStatements(stmts.statements); renderChart();
 }
 
 function getFilterParams() {
     const start = document.getElementById('filter-start').value;
     const end = document.getElementById('filter-end').value;
-    const params = new URLSearchParams();
-    if (start) params.set('start', start);
-    if (end) params.set('end', end);
-    const s = params.toString();
-    return s ? `?${s}` : '';
+    const p = new URLSearchParams();
+    if (start) p.set('start', start); if (end) p.set('end', end);
+    const s = p.toString(); return s ? `?${s}` : '';
 }
 
 function applyFilters() { loadAllData(); }
 function clearFilters() {
     document.getElementById('filter-start').value = '';
     document.getElementById('filter-end').value = '';
-    selectedMonth = '';
-    loadAllData();
+    selectedMonth = ''; loadAllData();
 }
 
 // ── Month Select ──────────────────────────────────────────────────
@@ -129,6 +113,20 @@ function toggleRawDesc() {
     document.querySelectorAll('.raw-col').forEach(el => el.classList.toggle('hidden', !show));
 }
 
+// ── Categories ────────────────────────────────────────────────────
+
+async function loadCategoryList() {
+    const data = await fetchJSON('/api/categories');
+    categoryList = data.categories;
+    // Populate the rules form dropdown
+    const sel = document.getElementById('rule-category');
+    if (sel) sel.innerHTML = catDropdown('');
+}
+
+function catCssClass(cat) {
+    return `cat-${(cat||'other').toLowerCase().replace(/[^a-z]/g,'')}`;
+}
+
 // ── Vendor Rules ──────────────────────────────────────────────────
 
 async function loadVendorRules() {
@@ -147,37 +145,43 @@ function toggleRules() {
 function renderRules() {
     const div = document.getElementById('rules-list');
     if (!vendorRules.length) {
-        div.innerHTML = '<p style="color:var(--text-dim);font-size:0.85rem">No rules defined yet. Edit a vendor cell in the table to create one.</p>';
+        div.innerHTML = '<p style="color:var(--text-dim);font-size:0.85rem">No rules yet. Click a vendor cell in the table to create one.</p>';
         return;
     }
     div.innerHTML = vendorRules.map((r, i) => `
         <div class="rule-row">
             <span class="rule-pattern">${escHtml(r.pattern)}</span>
             <span class="rule-vendor">${escHtml(r.vendor)}</span>
+            <span class="rule-cat">${r.category ? `<span class="cat-badge ${catCssClass(r.category)}">${escHtml(r.category)}</span>` : '<span class="dim">-</span>'}</span>
             <div class="rule-actions">
                 <button class="btn btn-small btn-secondary" onclick="editRule(${i})">Edit</button>
-                <button class="btn btn-small btn-danger" onclick="deleteRule('${escHtml(r.pattern)}')">Delete</button>
+                <button class="btn btn-small btn-danger" onclick="deleteRule('${escAttr(r.pattern)}')">Delete</button>
             </div>
         </div>
     `).join('');
 }
 
+function catDropdown(selected) {
+    return '<option value="">None (use auto-categorizer)</option>' +
+        categoryList.map(c => `<option value="${escHtml(c)}"${c === selected ? ' selected' : ''}>${escHtml(c)}</option>`).join('');
+}
+
 async function addRule() {
     const pattern = document.getElementById('rule-pattern').value.trim();
     const vendor = document.getElementById('rule-vendor').value.trim();
+    const category = document.getElementById('rule-category').value;
     if (!pattern || !vendor) return;
-    await fetchJSON_withMethod('POST', '/api/vendor-rules', { pattern, vendor });
+    await fetchJSON_withMethod('POST', '/api/vendor-rules', { pattern, vendor, category });
     document.getElementById('rule-pattern').value = '';
     document.getElementById('rule-vendor').value = '';
-    await loadVendorRules();
-    await loadAllData();
+    document.getElementById('rule-category').value = '';
+    await loadVendorRules(); await loadAllData();
 }
 
 async function deleteRule(pattern) {
     if (!confirm(`Delete rule "${pattern}"?`)) return;
     await fetch(`${API}/api/vendor-rules/${encodeURIComponent(pattern)}`, { method: 'DELETE' });
-    await loadVendorRules();
-    await loadAllData();
+    await loadVendorRules(); await loadAllData();
 }
 
 function editRule(index) {
@@ -187,20 +191,55 @@ function editRule(index) {
     const newVendor = prompt('Vendor:', rule.vendor);
     if (newVendor === null) return;
     if (!newPattern.trim() || !newVendor.trim()) return;
-    fetchJSON_withMethod('PUT', '/api/vendor-rules', { old_pattern: rule.pattern, pattern: newPattern.trim(), vendor: newVendor.trim() })
-        .then(() => { loadVendorRules(); loadAllData(); });
+    // Use a simple prompt for category since we can't easily do a dropdown in prompt()
+    const catHint = `Category (current: ${rule.category || 'none'}):\n${categoryList.join(', ')}`;
+    const newCat = prompt(catHint, rule.category || '');
+    if (newCat === null) return;
+    fetchJSON_withMethod('PUT', '/api/vendor-rules', {
+        old_pattern: rule.pattern, pattern: newPattern.trim(), vendor: newVendor.trim(), category: newCat.trim()
+    }).then(() => { loadVendorRules(); loadAllData(); });
 }
 
 async function saveVendorFromCell(txnId, rawDesc) {
-    // Pre-fill pattern from the raw description
-    const pattern = prompt('Pattern to match (substring of description):', rawDesc.trim());
-    if (pattern === null) return;
+    // Step 1: Pattern
+    const pattern = prompt('Pattern to match (substring):', rawDesc.trim());
+    if (pattern === null || !pattern.trim()) return;
+    // Step 2: Vendor name
     const vendor = prompt('Vendor name:', '');
     if (vendor === null || !vendor.trim()) return;
+    // Step 3: Category (dropdown-style via prompt with list)
+    const catHint = `Assign category (or leave blank to skip):\n${categoryList.join(', ')}`;
+    const category = prompt(catHint, '');
+    if (category === null) return;
 
-    await fetchJSON_withMethod('POST', '/api/vendor-rules', { pattern: pattern.trim(), vendor: vendor.trim() });
-    await loadVendorRules();
-    await loadAllData();
+    await fetchJSON_withMethod('POST', '/api/vendor-rules', {
+        pattern: pattern.trim(), vendor: vendor.trim(), category: category.trim()
+    });
+    await loadVendorRules(); await loadAllData();
+}
+
+// ── Per-Transaction Category Override ─────────────────────────────
+
+function editCategory(txnId, currentCat) {
+    // Create an inline dropdown
+    const td = event.target.closest('td');
+    const existing = td.querySelector('select');
+    if (existing) return; // already editing
+
+    const select = document.createElement('select');
+    select.innerHTML = catDropdown(currentCat);
+    select.value = currentCat;
+    select.className = 'inline-cat-select';
+    select.onchange = async () => {
+        const newCat = select.value;
+        await fetchJSON_withMethod('PUT', `/api/transactions/${txnId}/category`, { category: newCat });
+        await loadAllData();
+    };
+    select.onblur = () => { renderTransactions(); }; // restore on blur if not changed
+
+    td.innerHTML = '';
+    td.appendChild(select);
+    select.focus();
 }
 
 // ── Chart Controls ────────────────────────────────────────────────
@@ -307,18 +346,17 @@ function renderTransactions() {
 
     tbody.innerHTML = txns.map(t => {
         const amtClass = t.amount < 0 ? 'amount-neg' : 'amount-pos';
-        const catClass = `cat-${(t.category||'other').toLowerCase().replace(/[^a-z]/g,'')}`;
+        const catClass = catCssClass(t.category);
         const ptsClass = `pts-${t.points_rate}x`;
         const vendorDisplay = t.vendor || t.description;
-        const isUnmatched = !t.vendor;
         return `<tr>
             <td>${t.transaction_date}</td>
-            <td class="vendor-cell${isUnmatched ? ' unmatched' : ''}" onclick="saveVendorFromCell(${t.id}, '${escAttr(t.description)}')" title="Click to set vendor rule">${escHtml(vendorDisplay)}</td>
+            <td class="vendor-cell" onclick="saveVendorFromCell(${t.id}, '${escAttr(t.description)}')" title="Click to create vendor rule">${escHtml(vendorDisplay)}</td>
             <td class="raw-col${showRaw ? '' : ' hidden'}">${escHtml(t.description)}</td>
             <td>${escHtml(t.cardholder)}</td>
             <td class="num ${amtClass}">$${t.amount.toFixed(2)}</td>
             <td class="num"><span class="points-badge">${t.points}</span></td>
-            <td><span class="cat-badge ${catClass}">${escHtml(t.category||'Other')}</span></td>
+            <td class="cat-cell" onclick="editCategory(${t.id}, '${escAttr(t.category)}')" title="Click to change category"><span class="cat-badge ${catClass}">${escHtml(t.category||'Other')}</span></td>
             <td><span class="cat-badge ${ptsClass}">${t.points_rate}x ${escHtml(t.points_category)}</span></td>
             <td>${escHtml(t.card)}</td>
         </tr>`;
@@ -401,4 +439,4 @@ async function fetchJSON_withMethod(method, url, body) {
     return (await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
 }
 function escHtml(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
-function escAttr(s) { return (s||'').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+function escAttr(s) { return (s||'').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }

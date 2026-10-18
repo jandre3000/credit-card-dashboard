@@ -212,13 +212,17 @@ def get_monthly_spending(conn: sqlite3.Connection, start_date: str = None, end_d
 
 
 def reapply_vendor_rules(conn: sqlite3.Connection):
-    """Re-normalize vendor on all transactions using current rules."""
-    from vendor_rules import load_rules, normalize_vendor
+    """Re-normalize vendor and category on all transactions using current rules."""
+    from vendor_rules import load_rules, normalize_vendor, get_rule_category
+    from categories import categorize
     rules = load_rules()
     rows = conn.execute("SELECT id, description FROM transactions").fetchall()
     for row in rows:
         vendor = normalize_vendor(row["description"], rules)
-        conn.execute("UPDATE transactions SET vendor = ? WHERE id = ?", (vendor, row["id"]))
+        rule_cat = get_rule_category(row["description"], rules)
+        category = rule_cat if rule_cat else categorize(row["description"])
+        conn.execute("UPDATE transactions SET vendor = ?, category = ? WHERE id = ?",
+                      (vendor, category, row["id"]))
     conn.commit()
 
 

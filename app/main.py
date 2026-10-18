@@ -17,7 +17,8 @@ from database import delete_statement, get_transaction_count, get_spending_by_cu
 from database import reapply_vendor_rules
 from parser import parse_amex_pdf
 from categories import categorize
-from vendor_rules import load_rules, normalize_vendor, save_rules, add_rule, delete_rule
+from vendor_rules import load_rules, normalize_vendor, save_rules, add_rule, delete_rule, get_rule_category
+from category_list import load_categories, save_categories
 
 app = FastAPI(title="Credit Card Dashboard")
 
@@ -53,8 +54,13 @@ def ingest_pdf(pdf_path: Path) -> dict | None:
     # Add auto-categories and vendor normalization
     rules = load_rules()
     for t in result["transactions"]:
-        t["category"] = categorize(t["description"])
         t["vendor"] = normalize_vendor(t["description"], rules)
+        # Vendor rule category > keyword auto-categorizer > "Other"
+        rule_cat = get_rule_category(t["description"], rules)
+        if rule_cat:
+            t["category"] = rule_cat
+        else:
+            t["category"] = categorize(t["description"])
 
     closing = result["header"].get("closing_date", "")
     statement_date = closing if closing else "unknown"
@@ -259,6 +265,31 @@ async def api_delete_vendor_rule(pattern: str):
     with db() as conn:
         reapply_vendor_rules(conn)
     return {"status": "ok", "rules": load_rules()}
+
+
+# ── Categories ─────────────────────────────────────────────────────
+
+@app.get("/api/categories")
+async def api_get_categories():
+    return {"categories": load_categories()}
+
+
+@app.put("/api/categories")
+async def api_update_categories(data: dict):
+    cats = data.get("categories", [])
+    if not cats:
+        raise HTTPException(400, "categories list required")
+    save_categories(cats)
+    return {"status": "ok", "categories": cats}
+
+
+@app.put("/api/transactions/{txn_id}/category")
+async def api_set_transaction_category(txn_id: int, data: dict):
+    category = data.get("category", "").strip()
+    with db() as conn:
+        conn.execute("UPDATE transactions SET category = ? WHERE id = ?", (category, txn_id))
+        conn.commit()
+    return {"status": "ok"}
 
 
 @app.get("/api/statements")
