@@ -1,17 +1,29 @@
 """Vendor normalization rules — loaded from persisted JSON file."""
 import json
 import os
+import shutil
 from pathlib import Path
 
-RULES_PATH = os.environ.get("VENDOR_RULES_PATH", os.path.join(os.path.dirname(__file__), "..", "data", "vendor_rules.json"))
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "data"))
+RULES_PATH = os.environ.get("VENDOR_RULES_PATH", os.path.join(DATA_DIR, "vendor_rules.json"))
+SEED_PATH = os.path.join(os.path.dirname(__file__), "seed", "vendor_rules.json")
 
 
 def load_rules() -> list[dict]:
-    """Load ordered vendor rules from JSON file."""
+    """Load ordered vendor rules from JSON file. Creates from seed if missing."""
     if not os.path.exists(RULES_PATH):
-        return []
+        _init_from_seed()
     with open(RULES_PATH, "r") as f:
         return json.load(f)
+
+
+def _init_from_seed():
+    """Copy seed rules to the data directory on first run."""
+    os.makedirs(os.path.dirname(RULES_PATH), exist_ok=True)
+    if os.path.exists(SEED_PATH):
+        shutil.copy2(SEED_PATH, RULES_PATH)
+    else:
+        save_rules([])
 
 
 def save_rules(rules: list[dict]):
@@ -46,7 +58,6 @@ def get_rule_category(description: str, rules: list[dict] = None) -> str:
 def add_rule(pattern: str, vendor: str, category: str = ""):
     """Add a new rule at the top (most specific first)."""
     rules = load_rules()
-    # Remove any existing rule with the same pattern
     rules = [r for r in rules if r["pattern"].upper() != pattern.upper()]
     rule = {"pattern": pattern, "vendor": vendor}
     if category:
