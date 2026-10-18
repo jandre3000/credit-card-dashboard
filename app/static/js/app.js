@@ -349,9 +349,15 @@ function renderCategoryPie(ctx) {
     mainChart = new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data:d.map(x=>x.total),backgroundColor:colors.map(c=>c+'cc'),borderColor:colors,borderWidth:1}]},options:pieOpts('$')});
 }
 function renderVendorPie(ctx) {
-    const d = allData.vendor, labels=d.map(x=>(x.vendor_name||'').length>20?x.vendor_name.substring(0,20)+'…':x.vendor_name);
-    const colors = labels.map((_,i)=>VENDOR_COLORS[i%VENDOR_COLORS.length]);
-    mainChart = new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data:d.map(x=>x.total),backgroundColor:colors.map(c=>c+'cc'),borderColor:colors,borderWidth:1}]},options:pieOpts('$')});
+    const d = allData.vendor;
+    // Aggregate by vendor name
+    const totals = {};
+    d.forEach(x => { totals[x.vendor_name] = (totals[x.vendor_name] || 0) + x.total; });
+    const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+    const labels = sorted.map(([v]) => v.length > 20 ? v.substring(0, 20) + '…' : v);
+    const colors = labels.map((_, i) => VENDOR_COLORS[i % VENDOR_COLORS.length]);
+    mainChart = new Chart(ctx, { type: 'doughnut', data: { labels, datasets: [{ data: sorted.map(([, t]) => t),
+        backgroundColor: colors.map(c => c + 'cc'), borderColor: colors, borderWidth: 1 }] }, options: pieOpts('$') });
 }
 function renderPointsChart(ctx) {
     const d=allData.points,totals={},colors={};
