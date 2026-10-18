@@ -328,6 +328,19 @@ tr:hover td { background: rgba(99, 102, 241, 0.05); }
     font-size: 0.8rem;
     min-width: 120px;
 }
+.notes-cell { cursor: pointer; max-width: 200px; }
+.notes-cell:hover { background: rgba(99, 102, 241, 0.1); border-radius: 0.25rem; }
+.notes-text { font-size: 0.8rem; color: var(--text-dim); font-style: italic; }
+.inline-notes-input {
+    background: var(--bg);
+    border: 1px solid var(--primary);
+    color: var(--text);
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    font-size: 0.8rem;
+    width: 100%;
+    min-width: 120px;
+}
 .rule-cat { flex: 0.5; }
 .rule-header-row { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 0.25rem; }
 .categories-section { margin-bottom: 2rem; }

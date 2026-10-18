@@ -19,6 +19,7 @@ from parser import parse_amex_pdf
 from categories import categorize
 from vendor_rules import load_rules, normalize_vendor, save_rules, add_rule, delete_rule, get_rule_category
 from category_list import load_categories, save_categories
+from notes import set_note, apply_notes_to_transactions
 
 app = FastAPI(title="Credit Card Dashboard")
 
@@ -105,6 +106,8 @@ def startup():
         os.remove(db_path)
     init_db()
     results = scan_statements_folder()
+    with db() as conn:
+        apply_notes_to_transactions(conn)
     if results:
         print(f"Rebuilt DB: ingested {len(results)} statement(s) from {STATEMENTS_DIR}")
 
@@ -291,6 +294,19 @@ async def api_set_transaction_category(txn_id: int, data: dict):
     with db() as conn:
         conn.execute("UPDATE transactions SET category = ? WHERE id = ?", (category, txn_id))
         conn.commit()
+    return {"status": "ok"}
+
+
+@app.put("/api/transactions/{txn_id}/notes")
+async def api_set_transaction_notes(txn_id: int, data: dict):
+    note = data.get("notes", "").strip()
+    with db() as conn:
+        # Get transaction details for persistence
+        row = conn.execute("SELECT transaction_date, description, amount FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+        if row:
+            conn.execute("UPDATE transactions SET notes = ? WHERE id = ?", (note, txn_id))
+            conn.commit()
+            set_note(row["transaction_date"], row["description"], row["amount"], note)
     return {"status": "ok"}
 
 

@@ -55,6 +55,7 @@ def init_db():
             points_rate INTEGER DEFAULT 0,
             points_category TEXT DEFAULT '',
             category TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
             FOREIGN KEY (statement_id) REFERENCES statements(id) ON DELETE CASCADE
         );
 
@@ -151,7 +152,7 @@ def get_transactions(
     rows = conn.execute(
         f"""SELECT t.id, t.transaction_date, t.posting_date, t.cardholder,
                    t.description, t.vendor, t.amount, t.points, t.points_rate,
-                   t.points_category, t.category, t.card
+                   t.points_category, t.category, t.notes, t.card
             FROM transactions t
             WHERE {where}
             ORDER BY t.transaction_date DESC, t.id DESC

@@ -303,6 +303,26 @@ function editCategory(txnId, currentCat) {
     select.focus();
 }
 
+function editNotes(txnId, currentNotes) {
+    const td = event.target.closest('td');
+    const existing = td.querySelector('input');
+    if (existing) return;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentNotes;
+    input.className = 'inline-notes-input';
+    input.placeholder = 'Add note...';
+    const save = async () => {
+        await fetchJSON_withMethod('PUT', `/api/transactions/${txnId}/notes`, { notes: input.value });
+        await loadAllData();
+    };
+    input.onkeydown = (e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') renderTransactions(); };
+    input.onblur = save;
+    td.innerHTML = '';
+    td.appendChild(input);
+    input.focus();
+}
+
 // ── Charts ────────────────────────────────────────────────────────
 
 function switchView(view) {
@@ -423,6 +443,7 @@ function renderTransactions() {
             <td class="cat-cell" onclick="editCategory(${t.id},'${escAttr(t.category)}')" title="Click to change"><span class="cat-badge ${cc}">${escHtml(t.category||'Other')}</span></td>
             <td><span class="cat-badge ${pc}">${t.points_rate}x ${escHtml(t.points_category)}</span></td>
             <td>${escHtml(t.card)}</td>
+            <td class="notes-cell" onclick="editNotes(${t.id}, '${escAttr(t.notes||'')}')"><span class="notes-text">${escHtml(t.notes||'')}</span></td>
         </tr>`;
     }).join('');
 }
