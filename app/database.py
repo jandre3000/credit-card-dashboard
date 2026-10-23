@@ -6,6 +6,9 @@ from datetime import date
 
 DB_PATH = os.environ.get("DB_PATH", "/app/data/credit_cards.db")
 
+# Vendor display name: normalized vendor if set by a rule, else raw description
+VENDOR_EXPR = "COALESCE(NULLIF(t.vendor, ''), t.description)"
+
 
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
@@ -118,16 +121,15 @@ def insert_transactions(conn: sqlite3.Connection, statement_id: int, card: str, 
     )
 
 
-def get_transactions(
-    conn: sqlite3.Connection,
+def _build_filters(
     start_date: str = None,
     end_date: str = None,
     card: str = None,
-    category: str = None,
-    vendor: str = None,
-    limit: int = 5000,
-    offset: int = 0,
-) -> list[dict]:
+    vendors: list[str] = None,
+    categories: list[str] = None,
+    points_categories: list[str] = None,
+) -> tuple[list[str], list[str]]:
+    """Shared WHERE-clause builder. OR within a column, AND across columns."""
     conditions = []
     params = []
     if start_date:
@@ -139,8 +141,36 @@ def get_transactions(
     if card:
         conditions.append("t.card = ?")
         params.append(card)
+    if vendors:
+        conditions.append(f"{VENDOR_EXPR} IN ({','.join('?' * len(vendors))})")
+        params.extend(vendors)
+    if categories:
+        conditions.append(f"t.category IN ({','.join('?' * len(categories))})")
+        params.extend(categories)
+    if points_categories:
+        conditions.append(f"t.points_category IN ({','.join('?' * len(points_categories))})")
+        params.extend(points_categories)
+    return conditions, params
+
+
+def get_transactions(
+    conn: sqlite3.Connection,
+    start_date: str = None,
+    end_date: str = None,
+    card: str = None,
+    category: str = None,
+    vendor: str = None,
+    limit: int = 5000,
+    offset: int = 0,
+    vendors: list[str] = None,
+    categories: list[str] = None,
+    points_categories: list[str] = None,
+) -> list[dict]:
+    conditions, params = _build_filters(
+        start_date, end_date, card, vendors, categories, points_categories
+    )
     if category:
-        conditions.append("t.points_category = ?")
+        conditions.append("t.category = ?")
         params.append(category)
     if vendor:
         conditions.append("UPPER(t.description) LIKE ?")
@@ -162,18 +192,10 @@ def get_transactions(
     return [dict(r) for r in rows]
 
 
-def get_daily_spending(conn: sqlite3.Connection, start_date: str = None, end_date: str = None, card: str = None) -> list[dict]:
-    conditions = ["t.amount > 0"]
-    params = []
-    if start_date:
-        conditions.append("t.transaction_date >= ?")
-        params.append(start_date)
-    if end_date:
-        conditions.append("t.transaction_date <= ?")
-        params.append(end_date)
-    if card:
-        conditions.append("t.card = ?")
-        params.append(card)
+def get_daily_spending(conn: sqlite3.Connection, start_date: str = None, end_date: str = None, card: str = None,
+                       vendors: list[str] = None, categories: list[str] = None, points_categories: list[str] = None) -> list[dict]:
+    conditions, params = _build_filters(start_date, end_date, card, vendors, categories, points_categories)
+    conditions.append("t.amount > 0")
 
     where = " AND ".join(conditions)
     rows = conn.execute(
@@ -187,18 +209,10 @@ def get_daily_spending(conn: sqlite3.Connection, start_date: str = None, end_dat
     return [dict(r) for r in rows]
 
 
-def get_monthly_spending(conn: sqlite3.Connection, start_date: str = None, end_date: str = None, card: str = None) -> list[dict]:
-    conditions = ["t.amount > 0"]
-    params = []
-    if start_date:
-        conditions.append("t.transaction_date >= ?")
-        params.append(start_date)
-    if end_date:
-        conditions.append("t.transaction_date <= ?")
-        params.append(end_date)
-    if card:
-        conditions.append("t.card = ?")
-        params.append(card)
+def get_monthly_spending(conn: sqlite3.Connection, start_date: str = None, end_date: str = None, card: str = None,
+                         vendors: list[str] = None, categories: list[str] = None, points_categories: list[str] = None) -> list[dict]:
+    conditions, params = _build_filters(start_date, end_date, card, vendors, categories, points_categories)
+    conditions.append("t.amount > 0")
 
     where = " AND ".join(conditions)
     rows = conn.execute(
@@ -227,15 +241,10 @@ def reapply_vendor_rules(conn: sqlite3.Connection):
     conn.commit()
 
 
-def get_spending_by_category(conn: sqlite3.Connection, start_date: str = None, end_date: str = None) -> list[dict]:
-    conditions = ["t.amount > 0"]
-    params = []
-    if start_date:
-        conditions.append("t.transaction_date >= ?")
-        params.append(start_date)
-    if end_date:
-        conditions.append("t.transaction_date <= ?")
-        params.append(end_date)
+def get_spending_by_category(conn: sqlite3.Connection, start_date: str = None, end_date: str = None,
+                             vendors: list[str] = None, categories: list[str] = None, points_categories: list[str] = None) -> list[dict]:
+    conditions, params = _build_filters(start_date, end_date, None, vendors, categories, points_categories)
+    conditions.append("t.amount > 0")
 
     where = " AND ".join(conditions)
     rows = conn.execute(
@@ -250,15 +259,11 @@ def get_spending_by_category(conn: sqlite3.Connection, start_date: str = None, e
     return [dict(r) for r in rows]
 
 
-def get_spending_by_custom_category(conn: sqlite3.Connection, start_date: str = None, end_date: str = None) -> list[dict]:
-    conditions = ["t.amount > 0", "t.category != ''"]
-    params = []
-    if start_date:
-        conditions.append("t.transaction_date >= ?")
-        params.append(start_date)
-    if end_date:
-        conditions.append("t.transaction_date <= ?")
-        params.append(end_date)
+def get_spending_by_custom_category(conn: sqlite3.Connection, start_date: str = None, end_date: str = None,
+                                    vendors: list[str] = None, categories: list[str] = None, points_categories: list[str] = None) -> list[dict]:
+    conditions, params = _build_filters(start_date, end_date, None, vendors, categories, points_categories)
+    conditions.append("t.amount > 0")
+    conditions.append("t.category != ''")
 
     where = " AND ".join(conditions)
     rows = conn.execute(
@@ -272,21 +277,16 @@ def get_spending_by_custom_category(conn: sqlite3.Connection, start_date: str = 
     return [dict(r) for r in rows]
 
 
-def get_spending_by_vendor(conn: sqlite3.Connection, start_date: str = None, end_date: str = None, top_n: int = 15) -> list[dict]:
-    conditions = ["t.amount > 0"]
-    params = []
-    if start_date:
-        conditions.append("t.transaction_date >= ?")
-        params.append(start_date)
-    if end_date:
-        conditions.append("t.transaction_date <= ?")
-        params.append(end_date)
+def get_spending_by_vendor(conn: sqlite3.Connection, start_date: str = None, end_date: str = None, top_n: int = 15,
+                           vendors: list[str] = None, categories: list[str] = None, points_categories: list[str] = None) -> list[dict]:
+    conditions, params = _build_filters(start_date, end_date, None, vendors, categories, points_categories)
+    conditions.append("t.amount > 0")
 
     where = " AND ".join(conditions)
 
     # Get top vendors by total spend (using normalized vendor name)
     top_vendors = conn.execute(
-        f"""SELECT CASE WHEN t.vendor != '' THEN t.vendor ELSE t.description END as vendor_name,
+        f"""SELECT {VENDOR_EXPR} as vendor_name,
                    SUM(t.amount) as total
             FROM transactions t
             WHERE {where}
@@ -302,7 +302,7 @@ def get_spending_by_vendor(conn: sqlite3.Connection, start_date: str = None, end
 
     placeholders = ",".join(["?"] * len(vendor_names))
     rows = conn.execute(
-        f"""SELECT CASE WHEN t.vendor != '' THEN t.vendor ELSE t.description END as vendor_name,
+        f"""SELECT {VENDOR_EXPR} as vendor_name,
                    t.transaction_date as date, SUM(t.amount) as total
             FROM transactions t
             WHERE {where} AND vendor_name IN ({placeholders})
@@ -313,15 +313,10 @@ def get_spending_by_vendor(conn: sqlite3.Connection, start_date: str = None, end
     return [dict(r) for r in rows]
 
 
-def get_points_over_time(conn: sqlite3.Connection, start_date: str = None, end_date: str = None) -> list[dict]:
-    conditions = ["t.points > 0"]
-    params = []
-    if start_date:
-        conditions.append("t.transaction_date >= ?")
-        params.append(start_date)
-    if end_date:
-        conditions.append("t.transaction_date <= ?")
-        params.append(end_date)
+def get_points_over_time(conn: sqlite3.Connection, start_date: str = None, end_date: str = None,
+                         vendors: list[str] = None, categories: list[str] = None, points_categories: list[str] = None) -> list[dict]:
+    conditions, params = _build_filters(start_date, end_date, None, vendors, categories, points_categories)
+    conditions.append("t.points > 0")
 
     where = " AND ".join(conditions)
     rows = conn.execute(
@@ -334,6 +329,19 @@ def get_points_over_time(conn: sqlite3.Connection, start_date: str = None, end_d
         params,
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_filter_options(conn: sqlite3.Connection, start_date: str = None, end_date: str = None) -> dict:
+    """Distinct vendors, categories, and points categories present in transactions."""
+    conditions, params = _build_filters(start_date, end_date)
+    where = " AND ".join(conditions) if conditions else "1=1"
+    vendors = [r[0] for r in conn.execute(
+        f"SELECT DISTINCT {VENDOR_EXPR} as vendor_name FROM transactions t WHERE {where} ORDER BY vendor_name", params)]
+    categories = [r[0] for r in conn.execute(
+        f"SELECT DISTINCT t.category FROM transactions t WHERE {where} AND t.category != '' ORDER BY t.category", params)]
+    points_categories = [r[0] for r in conn.execute(
+        f"SELECT DISTINCT t.points_category FROM transactions t WHERE {where} AND t.points_category != '' ORDER BY t.points_category", params)]
+    return {"vendors": vendors, "categories": categories, "points_categories": points_categories}
 
 
 def get_statements(conn: sqlite3.Connection) -> list[dict]:

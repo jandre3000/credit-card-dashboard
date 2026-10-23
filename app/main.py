@@ -14,7 +14,7 @@ from database import init_db, db, insert_statement, insert_transactions
 from database import get_transactions, get_daily_spending, get_monthly_spending, get_spending_by_category
 from database import get_spending_by_vendor, get_points_over_time, get_statements
 from database import delete_statement, get_transaction_count, get_spending_by_custom_category
-from database import reapply_vendor_rules
+from database import reapply_vendor_rules, get_filter_options
 from parser import parse_amex_pdf
 from categories import categorize
 from vendor_rules import load_rules, normalize_vendor, save_rules, add_rule, delete_rule, get_rule_category
@@ -158,11 +158,15 @@ async def api_transactions(
     card: str = Query(None),
     category: str = Query(None),
     vendor: str = Query(None),
+    vendors: list[str] = Query(None),
+    categories: list[str] = Query(None),
+    points_categories: list[str] = Query(None),
     limit: int = Query(5000),
     offset: int = Query(0),
 ):
     with db() as conn:
-        txns = get_transactions(conn, start, end, card, category, vendor, limit, offset)
+        txns = get_transactions(conn, start, end, card, category, vendor, limit, offset,
+                                vendors, categories, points_categories)
     return {"transactions": txns, "count": len(txns)}
 
 
@@ -171,9 +175,12 @@ async def api_daily_spending(
     start: str = Query(None),
     end: str = Query(None),
     card: str = Query(None),
+    vendors: list[str] = Query(None),
+    categories: list[str] = Query(None),
+    points_categories: list[str] = Query(None),
 ):
     with db() as conn:
-        data = get_daily_spending(conn, start, end, card)
+        data = get_daily_spending(conn, start, end, card, vendors, categories, points_categories)
     return {"data": data}
 
 
@@ -182,9 +189,12 @@ async def api_monthly_spending(
     start: str = Query(None),
     end: str = Query(None),
     card: str = Query(None),
+    vendors: list[str] = Query(None),
+    categories: list[str] = Query(None),
+    points_categories: list[str] = Query(None),
 ):
     with db() as conn:
-        data = get_monthly_spending(conn, start, end, card)
+        data = get_monthly_spending(conn, start, end, card, vendors, categories, points_categories)
     return {"data": data}
 
 
@@ -192,9 +202,12 @@ async def api_monthly_spending(
 async def api_custom_categories(
     start: str = Query(None),
     end: str = Query(None),
+    vendors: list[str] = Query(None),
+    categories: list[str] = Query(None),
+    points_categories: list[str] = Query(None),
 ):
     with db() as conn:
-        data = get_spending_by_custom_category(conn, start, end)
+        data = get_spending_by_custom_category(conn, start, end, vendors, categories, points_categories)
     return {"data": data}
 
 
@@ -202,9 +215,12 @@ async def api_custom_categories(
 async def api_category_spending(
     start: str = Query(None),
     end: str = Query(None),
+    vendors: list[str] = Query(None),
+    categories: list[str] = Query(None),
+    points_categories: list[str] = Query(None),
 ):
     with db() as conn:
-        data = get_spending_by_category(conn, start, end)
+        data = get_spending_by_category(conn, start, end, vendors, categories, points_categories)
     return {"data": data}
 
 
@@ -213,9 +229,12 @@ async def api_vendor_spending(
     start: str = Query(None),
     end: str = Query(None),
     top: int = Query(15),
+    vendors: list[str] = Query(None),
+    categories: list[str] = Query(None),
+    points_categories: list[str] = Query(None),
 ):
     with db() as conn:
-        data = get_spending_by_vendor(conn, start, end, top)
+        data = get_spending_by_vendor(conn, start, end, top, vendors, categories, points_categories)
     return {"data": data}
 
 
@@ -223,10 +242,23 @@ async def api_vendor_spending(
 async def api_points(
     start: str = Query(None),
     end: str = Query(None),
+    vendors: list[str] = Query(None),
+    categories: list[str] = Query(None),
+    points_categories: list[str] = Query(None),
 ):
     with db() as conn:
-        data = get_points_over_time(conn, start, end)
+        data = get_points_over_time(conn, start, end, vendors, categories, points_categories)
     return {"data": data}
+
+@app.get("/api/filters")
+async def api_filters(
+    start: str = Query(None),
+    end: str = Query(None),
+):
+    """Distinct vendors, categories, and points categories (optionally date-scoped)."""
+    with db() as conn:
+        data = get_filter_options(conn, start, end)
+    return data
 
 
 # ── Vendor Rules ───────────────────────────────────────────────────

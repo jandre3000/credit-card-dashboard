@@ -456,3 +456,105 @@ input[type="file"] {
     .filters { flex-wrap: wrap; }
     .chart-container { height: 300px; }
 }
+
+/* ── Column Filter Dropdowns ─────────────────────────────────────── */
+
+.filter-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 0 0.3rem;
+    line-height: 1.4;
+}
+
+.filter-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+
+.filter-btn.active {
+    color: var(--primary-hover);
+    background: rgba(99, 102, 241, 0.18);
+    border-color: var(--primary);
+}
+
+th.filtered, th:has(.filter-btn.active) { background: rgba(99, 102, 241, 0.12); }
+
+.filter-chip {
+    color: var(--primary-hover);
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-left: 0.25rem;
+}
+
+.filter-menu {
+    position: absolute;
+    z-index: 200;
+    width: 260px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+}
+
+.filter-menu.hidden { display: none; }
+
+.filter-menu-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+}
+
+.filter-search {
+    margin: 0.5rem 0.75rem 0.25rem;
+    padding: 0.35rem 0.5rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    color: var(--text);
+    font-size: 0.8rem;
+}
+
+.filter-menu-actions {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem;
+}
+
+.filter-list {
+    overflow-y: auto;
+    max-height: 220px;
+    padding: 0.25rem 0;
+}
+
+.filter-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.82rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.filter-option:hover { background: rgba(255, 255, 255, 0.06); }
+
+.filter-option input { accent-color: var(--primary); }
+
+.filter-option span { overflow: hidden; text-overflow: ellipsis; }
+
+.filter-empty { padding: 0.5rem 0.75rem; color: var(--text-dim); font-size: 0.8rem; }
+
+.filter-menu-hint {
+    padding: 0.4rem 0.75rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 0.7rem;
+}

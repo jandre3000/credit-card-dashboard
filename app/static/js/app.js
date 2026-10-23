@@ -9,6 +9,15 @@ let selectedMonth = '';
 let allData = { transactions: [], daily: [], monthly: [], categories: [], vendor: [], points: [] };
 let vendorRules = [];
 let categoryList = [];
+// Column filters (multi-select; OR within a column, AND across columns)
+let filters = { vendors: new Set(), categories: new Set(), pointsCategories: new Set() };
+let filterOptions = { vendors: [], categories: [], pointsCategories: [] };
+let activeFilterCol = null;
+const FILTER_COLS = {
+    vendors: { label: 'Vendor', optionsKey: 'vendors', param: 'vendors' },
+    categories: { label: 'Category', optionsKey: 'categories', param: 'categories' },
+    pointsCategories: { label: 'Points Cat', optionsKey: 'pointsCategories', param: 'points_categories' },
+};
 
 const CATEGORY_COLORS = {
     'Grocery': '#22c55e', 'Dining & Drinks': '#f97316', 'Gas & Transit': '#f59e0b',
@@ -45,26 +54,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadAllData() {
     const params = getFilterParams();
-    const [txns, daily, monthly, cats, vendor, points, stmts] = await Promise.all([
+    const dateStr = getDateParams().toString();
+    const [txns, daily, monthly, cats, vendor, points, stmts, fopts] = await Promise.all([
         fetchJSON(`/api/transactions${params}`), fetchJSON(`/api/spending/daily${params}`),
         fetchJSON(`/api/spending/monthly${params}`), fetchJSON(`/api/spending/categories${params}`),
         fetchJSON(`/api/spending/vendor${params}`), fetchJSON(`/api/points${params}`),
         fetchJSON('/api/statements'),
+        fetchJSON(`/api/filters${dateStr ? '?' + dateStr : ''}`),
     ]);
     allData.transactions = txns.transactions;
     allData.daily = daily.data; allData.monthly = monthly.data;
     allData.categories = cats.data; allData.vendor = vendor.data;
     allData.points = points.data;
+    filterOptions = {
+        vendors: fopts.vendors || [],
+        categories: fopts.categories || [],
+        pointsCategories: fopts.points_categories || [],
+    };
     document.getElementById('txn-count').textContent = `${stmts.transaction_count} transactions`;
     buildMonthSelect(); renderTransactions(); renderStatements(stmts.statements);
     renderMainChart(); renderPieCharts();
+    renderFilterIndicators();
+    if (activeFilterCol) renderFilterMenu(document.getElementById('filter-search').value);
 }
 
-function getFilterParams() {
+function getDateParams() {
     const start = document.getElementById('filter-start').value;
     const end = document.getElementById('filter-end').value;
     const p = new URLSearchParams();
     if (start) p.set('start', start); if (end) p.set('end', end);
+    return p;
+}
+
+function getFilterParams() {
+    const p = getDateParams();
+    for (const [col, cfg] of Object.entries(FILTER_COLS)) {
+        filters[col].forEach(v => p.append(cfg.param, v));
+    }
     const s = p.toString(); return s ? `?${s}` : '';
 }
 
@@ -75,6 +101,7 @@ function clearFilters() {
     selectedMonth = '';
     currentView = 'monthly';
     currentTableView = 'all';
+    Object.values(filters).forEach(s => s.clear());
     document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === 'monthly'));
     document.querySelectorAll('[data-tview]').forEach(b => b.classList.toggle('active', b.dataset.tview === 'all'));
     document.getElementById('month-select').classList.toggle('hidden', true);
@@ -432,6 +459,82 @@ function pieOpts(u) {
     return {responsive:true,maintainAspectRatio:false,
         plugins:{legend:{display:true,position:'right',labels:{color:'#9ca3af',boxWidth:10,padding:8,font:{size:10}}},
             tooltip:{callbacks:{label:c=>`${c.label}: ${u==='$'?'$':''}${c.parsed.toLocaleString()}${u==='pts'?' pts':''} (${((c.parsed/c.dataset.data.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`}}}};
+}
+
+// ── Column Filter Dropdowns (Sheets-style) ────────────────────────
+
+function openFilterMenu(col, btn, ev) {
+    if (ev) ev.stopPropagation();
+    const menu = document.getElementById('filter-menu');
+    if (activeFilterCol === col && !menu.classList.contains('hidden')) { closeFilterMenu(); return; }
+    activeFilterCol = col;
+    document.getElementById('filter-menu-title').textContent = FILTER_COLS[col].label;
+    const rect = btn.getBoundingClientRect();
+    menu.style.left = `${window.scrollX + rect.left}px`;
+    menu.style.top = `${window.scrollY + rect.bottom + 4}px`;
+    menu.classList.remove('hidden');
+    const search = document.getElementById('filter-search');
+    search.value = '';
+    renderFilterMenu('');
+    search.focus();
+    setTimeout(() => document.addEventListener('click', closeFilterMenuOnOutside), 0);
+}
+
+function closeFilterMenu() {
+    document.getElementById('filter-menu').classList.add('hidden');
+    activeFilterCol = null;
+    document.removeEventListener('click', closeFilterMenuOnOutside);
+}
+
+function closeFilterMenuOnOutside(e) {
+    const menu = document.getElementById('filter-menu');
+    if (!menu.contains(e.target)) closeFilterMenu();
+}
+
+function filterOptionsFor(col) {
+    // Selected values stay listed even if they fall outside the current date range
+    const set = new Set(filterOptions[FILTER_COLS[col].optionsKey] || []);
+    filters[col].forEach(v => set.add(v));
+    return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+function renderFilterMenu(searchText) {
+    const col = activeFilterCol;
+    if (!col) return;
+    const sel = filters[col];
+    const all = filterOptionsFor(col);
+    window._filterMenuAll = all;
+    const q = (searchText || '').toLowerCase();
+    const shown = all.map((v, i) => [v, i]).filter(([v]) => v.toLowerCase().includes(q));
+    const list = document.getElementById('filter-list');
+    list.innerHTML = shown.map(([v, i]) =>
+        `<label class="filter-option"><input type="checkbox" ${sel.has(v) ? 'checked' : ''} onchange="toggleFilterOption(${i})"><span>${escHtml(v)}</span></label>`
+    ).join('') || '<div class="filter-empty">No matches</div>';
+}
+
+function toggleFilterOption(idx) {
+    const col = activeFilterCol;
+    const v = window._filterMenuAll[idx];
+    if (!col || v === undefined) return;
+    filters[col].has(v) ? filters[col].delete(v) : filters[col].add(v);
+    loadAllData();  // selections apply immediately
+}
+
+function filterMenuAll(selectAll) {
+    const col = activeFilterCol;
+    if (!col) return;
+    if (selectAll) (window._filterMenuAll || []).forEach(v => filters[col].add(v));
+    else filters[col].clear();
+    loadAllData();
+}
+
+function renderFilterIndicators() {
+    document.querySelectorAll('.filter-btn[data-fcol]').forEach(btn => {
+        const n = filters[btn.dataset.fcol].size;
+        btn.classList.toggle('active', n > 0);
+        const chip = btn.parentElement.querySelector('.filter-chip');
+        if (chip) { chip.textContent = n > 0 ? `(${n})` : ''; chip.classList.toggle('hidden', n === 0); }
+    });
 }
 
 // ── Transactions Table ────────────────────────────────────────────

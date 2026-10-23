@@ -164,12 +164,12 @@
                     <thead>
                         <tr>
                             <th class="sortable" data-sort="transaction_date">Date <span class="sort-arrow">↕</span></th>
-                            <th class="sortable" data-sort="vendor">Vendor <span class="sort-arrow">↕</span></th>
+                            <th class="sortable" data-sort="vendor">Vendor <span class="filter-chip hidden"></span><button class="filter-btn" data-fcol="vendors" onclick="openFilterMenu('vendors', this, event)" title="Filter by vendor">▾</button> <span class="sort-arrow">↕</span></th>
                             <th class="sortable raw-col hidden" data-sort="description">Raw Description <span class="sort-arrow">↕</span></th>
                             <th class="sortable num" data-sort="amount">Amount <span class="sort-arrow">↕</span></th>
                             <th class="sortable num" data-sort="points">Points <span class="sort-arrow">↕</span></th>
-                            <th class="sortable" data-sort="category">Category <span class="sort-arrow">↕</span></th>
-                            <th class="sortable" data-sort="points_category">Points Cat <span class="sort-arrow">↕</span></th>
+                            <th class="sortable" data-sort="category">Category <span class="filter-chip hidden"></span><button class="filter-btn" data-fcol="categories" onclick="openFilterMenu('categories', this, event)" title="Filter by category">▾</button> <span class="sort-arrow">↕</span></th>
+                            <th class="sortable" data-sort="points_category">Points Cat <span class="filter-chip hidden"></span><button class="filter-btn" data-fcol="pointsCategories" onclick="openFilterMenu('pointsCategories', this, event)" title="Filter by points category">▾</button> <span class="sort-arrow">↕</span></th>
                             <th>Card</th>
                             <th>Notes</th>
                         </tr>
@@ -185,6 +185,21 @@
             <div id="statements-list"></div>
         </section>
     </main>
+
+    <!-- Column Filter Popover -->
+    <div id="filter-menu" class="filter-menu hidden">
+        <div class="filter-menu-header">
+            <strong id="filter-menu-title"></strong>
+            <button class="btn-close" onclick="closeFilterMenu()">&times;</button>
+        </div>
+        <input id="filter-search" class="filter-search" placeholder="Search..." oninput="renderFilterMenu(this.value)">
+        <div class="filter-menu-actions">
+            <button class="btn btn-small btn-secondary" onclick="filterMenuAll(true)">Select all</button>
+            <button class="btn btn-small btn-secondary" onclick="filterMenuAll(false)">Clear</button>
+        </div>
+        <div id="filter-list" class="filter-list"></div>
+        <div class="filter-menu-hint">Selections apply immediately</div>
+    </div>
 
     <script src="/static/js/app.js"></script>
 </body>
