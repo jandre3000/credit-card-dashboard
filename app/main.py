@@ -15,6 +15,7 @@ from database import get_transactions, get_daily_spending, get_monthly_spending,
 from database import get_spending_by_vendor, get_points_over_time, get_statements
 from database import delete_statement, get_transaction_count, get_spending_by_custom_category
 from database import reapply_vendor_rules, get_filter_options
+from database import get_yearly_spending
 from parser import parse_amex_pdf
 from categories import categorize
 from vendor_rules import load_rules, normalize_vendor, save_rules, add_rule, delete_rule, get_rule_category
@@ -195,6 +196,19 @@ async def api_monthly_spending(
 ):
     with db() as conn:
         data = get_monthly_spending(conn, start, end, card, vendors, categories, points_categories)
+    return {"data": data}
+
+@app.get("/api/spending/yearly")
+async def api_yearly_spending(
+    start: str = Query(None),
+    end: str = Query(None),
+    card: str = Query(None),
+    vendors: list[str] = Query(None),
+    categories: list[str] = Query(None),
+    points_categories: list[str] = Query(None),
+):
+    with db() as conn:
+        data = get_yearly_spending(conn, start, end, card, vendors, categories, points_categories)
     return {"data": data}
 
 

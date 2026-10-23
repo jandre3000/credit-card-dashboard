@@ -6,7 +6,7 @@ let currentTableView = 'all';
 let sortColumn = 'transaction_date';
 let sortDirection = 'desc';
 let selectedMonth = '';
-let allData = { transactions: [], daily: [], monthly: [], categories: [], vendor: [], points: [] };
+let allData = { transactions: [], daily: [], monthly: [], yearly: [], categories: [], vendor: [], points: [] };
 let vendorRules = [];
 let categoryList = [];
 // Column filters (multi-select; OR within a column, AND across columns)
@@ -55,16 +55,17 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadAllData() {
     const params = getFilterParams();
     const dateStr = getDateParams().toString();
-    const [txns, daily, monthly, cats, vendor, points, stmts, fopts] = await Promise.all([
+    const [txns, daily, monthly, yearly, cats, vendor, points, stmts, fopts] = await Promise.all([
         fetchJSON(`/api/transactions${params}`), fetchJSON(`/api/spending/daily${params}`),
-        fetchJSON(`/api/spending/monthly${params}`), fetchJSON(`/api/spending/categories${params}`),
+        fetchJSON(`/api/spending/monthly${params}`), fetchJSON(`/api/spending/yearly${params}`),
+        fetchJSON(`/api/spending/categories${params}`),
         fetchJSON(`/api/spending/vendor${params}`), fetchJSON(`/api/points${params}`),
         fetchJSON('/api/statements'),
         fetchJSON(`/api/filters${dateStr ? '?' + dateStr : ''}`),
     ]);
     allData.transactions = txns.transactions;
     allData.daily = daily.data; allData.monthly = monthly.data;
-    allData.categories = cats.data; allData.vendor = vendor.data;
+    allData.yearly = yearly.data; allData.categories = cats.data; allData.vendor = vendor.data;
     allData.points = points.data;
     filterOptions = {
         vendors: fopts.vendors || [],
@@ -372,34 +373,124 @@ function editNotes(txnId, currentNotes) {
 
 function switchView(view) {
     currentView = view;
+    if (view === 'all') {
+        document.getElementById('filter-start').value = '';
+        document.getElementById('filter-end').value = '';
+    }
     document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-    renderMainChart();
+    updateNavState();
+    loadAllData();
+}
+
+function getChartNavRange() {
+    const data = currentView === 'yearly' ? allData.yearly
+        : currentView === 'all' ? []
+        : (currentView === 'daily' ? allData.daily : allData.monthly);
+    const dates = data.map(d => d.year || d.month || d.date);
+    if (!dates.length) return null;
+    return { min: dates[0], max: dates[dates.length - 1] };
+}
+
+function updateNavState() {
+    const navs = document.querySelectorAll('.chart-nav');
+    const isNav = currentView !== 'all';
+    navs.forEach(btn => btn.classList.toggle('disabled', !isNav));
+    if (isNav) {
+        const range = getChartNavRange();
+        if (range) {
+            navs[0].classList.toggle('disabled', range.min <= getEffectiveFirst());
+            navs[1].classList.toggle('disabled', range.max >= getLast());
+        }
+    }
+}
+
+function getDataBounds() {
+    const xs = allData.transactions.map(t => t.transaction_date);
+    if (!xs.length) return { first: '2023-01-01', last: '2026-12-31' };
+    xs.sort();
+    return { first: xs[0], last: xs[xs.length - 1] };
+}
+
+function getEffectiveFirst() {
+    const s = document.getElementById('filter-start').value;
+    return s || getDataBounds().first;
+}
+
+function getLast() {
+    const s = document.getElementById('filter-end').value;
+    return s || getDataBounds().last;
+}
+
+function navChart(dir) {
+    if (currentView === 'all') return;
+
+    let start = document.getElementById('filter-start').value;
+    let end = document.getElementById('filter-end').value;
+
+    if (!start && !end) {
+        // Initialize from data bounds
+        if (!allData.monthly.length && !allData.yearly.length) return;
+        const data = currentView === 'yearly' ? allData.yearly : (currentView === 'daily' ? allData.daily : allData.monthly);
+        if (!data.length) return;
+        if (currentView === 'yearly') {
+            start = data[0].year + '-01-01';
+            end = data[data.length - 1].year + '-12-31';
+        } else {
+            const firstLabel = data[0].month || data[0].date;
+            const [fy, fm] = firstLabel.split('-').map(Number);
+            const ld = new Date(fy, fm, 0).getDate();
+            start = `${firstLabel}-01`;
+            end = `${firstLabel}-${String(ld).padStart(2, '0')}`;
+        }
+    }
+
+    if (currentView === 'yearly') {
+        const sd = start.split('-').map(Number);
+        const ed = end.split('-').map(Number);
+        document.getElementById('filter-start').value = `${sd[0] + dir}-${String(sd[1]).padStart(2, '0')}-${String(sd[2]).padStart(2, '0')}`;
+        document.getElementById('filter-end').value = `${ed[0] + dir}-${String(ed[1]).padStart(2, '0')}-${String(ed[2]).padStart(2, '0')}`;
+    } else {
+        const [sy, sm] = start.split('-').map(Number);
+        const [ey, em] = end.split('-').map(Number);
+        const [nym, nys] = shiftMonth(sy, sm, dir);
+        const [nem, ney] = shiftMonth(ey, em, dir);
+        const edDay = Math.min(end.split('-')[2]|0, new Date(nem, ney, 0).getDate());
+        document.getElementById('filter-start').value = `${nys}-${String(nym).padStart(2, '0')}-01`;
+        document.getElementById('filter-end').value = `${ney}-${String(nem).padStart(2, '0')}-${String(edDay).padStart(2, '0')}`;
+    }
+
+    loadAllData();
+}
+
+function shiftMonth(year, month, dir) {
+    let m = month + dir, y = year;
+    if (m < 1) { m = 12; y--; }
+    if (m > 12) { m = 1; y++; }
+    return [m, y];
+}
+
+function renderChartSummary(data) {
+    const el = document.getElementById('chart-summary');
+    if (!data || !data.length) {
+        el.innerHTML = currentView === 'all' && !data?.length
+            ? 'Select a time view to see totals' : '';
+        return;
+    }
+    const total = data.reduce((s, d) => s + d.total, 0);
+    const avg = data.length >= 2 ? total / data.length : total;
+    const unit = currentView === 'yearly' ? 'year' : currentView === 'daily' ? 'day' : 'month';
+    const totalLabel = currentView === 'all' ? '' : `Total: <span class="chart-summary-value">$${total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits: 2})}</span>`;
+    const avgLabel = data.length >= 2
+        ? ` | Per ${unit}: <span class="chart-summary-value">$${avg.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits: 2})}</span>`
+        : '';
+    el.innerHTML = `${totalLabel}${avgLabel}`;
 }
 
 function renderMainChart() {
     if (mainChart) mainChart.destroy();
     const ctx = document.getElementById('main-chart').getContext('2d');
-    if (currentView === 'monthly') {
-        const data = allData.monthly;
-        mainChart = new Chart(ctx, {
-            type: 'bar',
-            data: { labels: data.map(d => formatMonth(d.month)), datasets: [{ label: 'Monthly Spending', data: data.map(d => d.total),
-                backgroundColor: '#6366f180', borderColor: '#6366f1', borderWidth: 1, borderRadius: 4 }] },
-            options: {
-                ...spendingOpts('$'),
-                onClick: (evt, elements) => {
-                    if (elements.length > 0) {
-                        const idx = elements[0].index;
-                        const month = allData.monthly[idx].month;
-                        filterByChartMonth(month);
-                    }
-                },
-                onHover: (evt, elements) => {
-                    evt.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
-                }
-            }
-        });
-    } else {
+
+    if (currentView === 'daily') {
         const data = allData.daily;
         mainChart = new Chart(ctx, {
             type: 'bar',
@@ -407,7 +498,43 @@ function renderMainChart() {
                 backgroundColor: '#6366f180', borderColor: '#6366f1', borderWidth: 1, borderRadius: 2 }] },
             options: spendingOpts('$')
         });
+        renderChartSummary(data);
+    } else if (currentView === 'yearly') {
+        const data = allData.yearly;
+        mainChart = new Chart(ctx, {
+            type: 'bar',
+            data: { labels: data.map(d => d.year), datasets: [{ label: 'Yearly Spending', data: data.map(d => d.total),
+                backgroundColor: '#6366f180', borderColor: '#6366f1', borderWidth: 1, borderRadius: 6 }] },
+            options: spendingOpts('$')
+        });
+        renderChartSummary(data);
+    } else {
+        // monthly or all use the same monthly data
+        const data = allData.monthly;
+        const clickable = currentView === 'monthly';
+        mainChart = new Chart(ctx, {
+            type: 'bar',
+            data: { labels: data.map(d => formatMonth(d.month)), datasets: [{ label: 'Monthly Spending', data: data.map(d => d.total),
+                backgroundColor: '#6366f180', borderColor: '#6366f1', borderWidth: 1, borderRadius: 4 }] },
+            options: {
+                ...spendingOpts('$'),
+                ...(clickable ? {
+                    onClick: (evt, elements) => {
+                        if (elements.length > 0) {
+                            const idx = elements[0].index;
+                            const month = allData.monthly[idx].month;
+                            filterByChartMonth(month);
+                        }
+                    },
+                    onHover: (evt, elements) => {
+                        evt.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
+                    }
+                } : {})
+            }
+        });
+        renderChartSummary(data);
     }
+    updateNavState();
 }
 
 function renderPieCharts() {

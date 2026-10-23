@@ -138,6 +138,17 @@ main { max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem; }
     color: var(--text);
 }
 
+.chart-summary {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.chart-summary-value { color: var(--text); font-weight: 500; }
+
+.chart-nav { font-size: 0.85rem; letter-spacing: -0.02em; }
+.chart-nav.disabled { opacity: 0.3; pointer-events: none; }
+
 .chart-container {
     background: var(--surface);
     border: 1px solid var(--border);

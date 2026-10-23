@@ -70,9 +70,14 @@
                 </div>
             </div>
             <div class="chart-controls">
+                <div class="chart-summary" id="chart-summary"></div>
                 <div class="toggle-group">
+                    <button class="btn btn-small chart-nav" onclick="navChart(-1)" title="Previous">&#x2B05;&#xFE0E;</button>
                     <button class="btn btn-small" data-view="daily" onclick="switchView('daily')">Daily</button>
                     <button class="btn btn-small active" data-view="monthly" onclick="switchView('monthly')">Monthly</button>
+                    <button class="btn btn-small" data-view="yearly" onclick="switchView('yearly')">Yearly</button>
+                    <button class="btn btn-small" data-view="all" onclick="switchView('all')">All</button>
+                    <button class="btn btn-small chart-nav" onclick="navChart(1)" title="Next">&#x27A1;&#xFE0E;</button>
                 </div>
             </div>
             <div class="chart-container">

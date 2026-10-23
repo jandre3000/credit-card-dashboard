@@ -226,6 +226,23 @@ def get_monthly_spending(conn: sqlite3.Connection, start_date: str = None, end_d
     return [dict(r) for r in rows]
 
 
+def get_yearly_spending(conn: sqlite3.Connection, start_date: str = None, end_date: str = None, card: str = None,
+                        vendors: list[str] = None, categories: list[str] = None, points_categories: list[str] = None) -> list[dict]:
+    conditions, params = _build_filters(start_date, end_date, card, vendors, categories, points_categories)
+    conditions.append("t.amount > 0")
+
+    where = " AND ".join(conditions)
+    rows = conn.execute(
+        f"""SELECT substr(t.transaction_date, 1, 4) as year, SUM(t.amount) as total
+            FROM transactions t
+            WHERE {where}
+            GROUP BY substr(t.transaction_date, 1, 4)
+            ORDER BY year""",
+        params,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def reapply_vendor_rules(conn: sqlite3.Connection):
     """Re-normalize vendor and category on all transactions using current rules."""
     from vendor_rules import load_rules, normalize_vendor, get_rule_category
