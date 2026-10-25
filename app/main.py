@@ -1,9 +1,20 @@
 """Credit Card Statement Dashboard — FastAPI backend."""
 import asyncio
+import logging
 import os
 import shutil
+import sys
+import time
 from datetime import date
 from pathlib import Path
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    stream=sys.stdout,
+    force=True,
+)
+log = logging.getLogger("credit-card-dashboard")
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
@@ -63,11 +74,13 @@ def ingest_pdf(pdf_path: Path, card_slug: str = None) -> dict | None:
     parser_name = card_slug.split("_")[0]  # e.g. "amex" from "amex_cobalt"
     parser_fn = PARSERS.get(parser_name)
     if not parser_fn:
+        log.warning("    ✗ No parser for '%s' (inferred from card slug '%s')", parser_name, card_slug)
         return None
 
     try:
         result = parser_fn(str(pdf_path))
-    except Exception:
+    except Exception as e:
+        log.warning("    ✗ Parse failed for %s: %s", pdf_path.name, e)
         return None
 
     if not result["transactions"]:
@@ -120,30 +133,51 @@ def scan_statements_folder():
             import shutil as _shutil
             dest.parent.mkdir(parents=True, exist_ok=True)
             _shutil.move(str(pdf_path), str(dest))
+            log.info("Migrated loose PDF: %s -> amex_cobalt/", pdf_path.name)
 
     # Walk per-card subdirs
-    for card_dir in sorted(STATEMENTS_DIR.iterdir()):
-        if not card_dir.is_dir() or card_dir.name.startswith("."):
-            continue
-        for pdf_path in sorted(card_dir.glob("*.pdf")):
+    card_dirs = sorted(d for d in STATEMENTS_DIR.iterdir()
+                       if d.is_dir() and not d.name.startswith("."))
+    log.info("Found %d card director(ies): %s", len(card_dirs), [d.name for d in card_dirs])
+    for card_dir in card_dirs:
+        pdfs = sorted(card_dir.glob("*.pdf"))
+        log.info("  [%s] %d PDF(s) found", card_dir.name, len(pdfs))
+        for pdf_path in pdfs:
+            log.info("    Parsing %s ...", pdf_path.name)
             result = ingest_pdf(pdf_path, card_slug=card_dir.name)
             if result:
+                log.info("    ✓ %s: %d txns, $%.2f, %d pts",
+                         pdf_path.name, result["transactions"],
+                         result["total_spend"], result["total_points"])
                 ingested.append(result)
+            else:
+                log.info("    ⊘ %s: skipped (already ingested or parse failed)", pdf_path.name)
     return ingested
 
 
 @app.on_event("startup")
 def startup():
+    t0 = time.time()
+    log.info("Starting credit card dashboard...")
     # Blow away and rebuild DB from source PDFs on every start
     db_path = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "..", "data", "credit_cards.db"))
     if os.path.exists(db_path):
         os.remove(db_path)
+        log.info("Removed old database: %s", db_path)
+    log.info("Initialising database schema and seeding cards...")
     init_db()
+    log.info("Database ready (%.1fs). Scanning statements...", time.time() - t0)
     results = scan_statements_folder()
+    log.info("Statements scan complete. Applying notes...")
     with db() as conn:
         apply_notes_to_transactions(conn)
+    elapsed = time.time() - t0
     if results:
-        print(f"Rebuilt DB: ingested {len(results)} statement(s) from {STATEMENTS_DIR}")
+        total_txns = sum(r["transactions"] for r in results)
+        log.info("Rebuilt DB: %d statement(s), %d transaction(s) in %.1fs", len(results), total_txns, elapsed)
+    else:
+        log.info("Rebuilt DB: 0 statements ingested (%.1fs)", elapsed)
+    log.info("Startup finished — app is ready.")
 
 
 @app.get("/", response_class=HTMLResponse)
