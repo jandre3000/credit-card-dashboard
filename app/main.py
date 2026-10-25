@@ -16,7 +16,8 @@ from database import get_spending_by_vendor, get_points_over_time, get_statement
 from database import delete_statement, get_transaction_count, get_spending_by_custom_category
 from database import reapply_vendor_rules, get_filter_options
 from database import get_yearly_spending
-from parser import parse_amex_pdf
+from parser import PARSERS
+from database import get_cards
 from categories import categorize
 from vendor_rules import load_rules, normalize_vendor, save_rules, add_rule, delete_rule, get_rule_category
 from category_list import load_categories, save_categories
@@ -32,21 +33,40 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
-def ingest_pdf(pdf_path: Path) -> dict | None:
+def ingest_pdf(pdf_path: Path, card_slug: str = None) -> dict | None:
     """Parse a PDF and insert into DB. Returns result dict or None if skipped/failed."""
     if not pdf_path.name.lower().endswith(".pdf"):
         return None
 
+    # Resolve card slug from directory name or parameter
+    if not card_slug:
+        card_slug = pdf_path.parent.name
+    # Validate card exists
+    with db() as conn:
+        cards = {c["slug"] for c in get_cards(conn)}
+    if card_slug not in cards:
+        return None
+
+    # Relative filename (just the PDF name, not the full path)
+    rel_filename = pdf_path.name
+
     # Check if already ingested
     with db() as conn:
         existing = conn.execute(
-            "SELECT id FROM statements WHERE filename = ?", (pdf_path.name,)
+            "SELECT id FROM statements WHERE filename = ? AND card = ?",
+            (rel_filename, card_slug),
         ).fetchone()
         if existing:
             return None
 
+    # Select parser based on card slug's parser (amex default)
+    parser_name = card_slug.split("_")[0]  # e.g. "amex" from "amex_cobalt"
+    parser_fn = PARSERS.get(parser_name)
+    if not parser_fn:
+        return None
+
     try:
-        result = parse_amex_pdf(str(pdf_path))
+        result = parser_fn(str(pdf_path))
     except Exception:
         return None
 
@@ -57,7 +77,6 @@ def ingest_pdf(pdf_path: Path) -> dict | None:
     rules = load_rules()
     for t in result["transactions"]:
         t["vendor"] = normalize_vendor(t["description"], rules)
-        # Vendor rule category > keyword auto-categorizer > "Other"
         rule_cat = get_rule_category(t["description"], rules)
         if rule_cat:
             t["category"] = rule_cat
@@ -69,20 +88,21 @@ def ingest_pdf(pdf_path: Path) -> dict | None:
 
     with db() as conn:
         stmt_id = insert_statement(conn, {
-            "card": result["card"],
+            "card": card_slug,
             "statement_date": statement_date,
             "opening_date": result["header"].get("opening_date"),
             "closing_date": closing,
-            "cardholder": result["header"].get("cardholder"),
+            "cardholder": result["header"].get("cardholder", ""),
             "total_spend": result["total_spend"],
             "total_points": result["total_points"],
-            "filename": pdf_path.name,
+            "filename": rel_filename,
         })
-        insert_transactions(conn, stmt_id, result["card"], result["transactions"])
+        insert_transactions(conn, stmt_id, card_slug, result["transactions"])
 
     return {
         "statement_id": stmt_id,
-        "filename": pdf_path.name,
+        "card_slug": card_slug,
+        "filename": rel_filename,
         "transactions": len(result["transactions"]),
         "total_spend": result["total_spend"],
         "total_points": result["total_points"],
@@ -90,12 +110,25 @@ def ingest_pdf(pdf_path: Path) -> dict | None:
 
 
 def scan_statements_folder():
-    """Scan statements/ for any PDFs not yet in the DB and ingest them."""
+    """Scan statements/<card_slug>/ for PDFs and ingest them.
+    Also migrates loose PDFs in the statements root into amex_cobalt/ for backward compat."""
     ingested = []
+    # Migrate any loose PDFs in root statements/ into amex_cobalt/
     for pdf_path in STATEMENTS_DIR.glob("*.pdf"):
-        result = ingest_pdf(pdf_path)
-        if result:
-            ingested.append(result)
+        dest = STATEMENTS_DIR / "amex_cobalt" / pdf_path.name
+        if not dest.exists():
+            import shutil as _shutil
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            _shutil.move(str(pdf_path), str(dest))
+
+    # Walk per-card subdirs
+    for card_dir in sorted(STATEMENTS_DIR.iterdir()):
+        if not card_dir.is_dir() or card_dir.name.startswith("."):
+            continue
+        for pdf_path in sorted(card_dir.glob("*.pdf")):
+            result = ingest_pdf(pdf_path, card_slug=card_dir.name)
+            if result:
+                ingested.append(result)
     return ingested
 
 
@@ -121,22 +154,27 @@ async def index(request: Request):
 # ── Statement Upload ──────────────────────────────────────────────
 
 @app.post("/api/upload")
-async def upload_statements(files: list[UploadFile] = File(...)):
+async def upload_statements(
+    files: list[UploadFile] = File(...),
+    card_slug: str = Query("amex_cobalt"),
+):
     results = []
     errors = []
+
+    # Validate card exists; create amex_cobalt dir as default
+    card_dir = STATEMENTS_DIR / card_slug
+    card_dir.mkdir(parents=True, exist_ok=True)
 
     for file in files:
         if not file.filename.lower().endswith(".pdf"):
             errors.append({"filename": file.filename, "error": "Not a PDF"})
             continue
 
-        # Save the uploaded PDF
-        dest = STATEMENTS_DIR / file.filename
+        dest = card_dir / file.filename
         with open(dest, "wb") as f:
             shutil.copyfileobj(file.file, f)
 
-        # Parse and ingest
-        result = ingest_pdf(dest)
+        result = ingest_pdf(dest, card_slug=card_slug)
         if result:
             results.append(result)
         else:
@@ -275,6 +313,15 @@ async def api_filters(
     return data
 
 
+# ── Cards ─────────────────────────────────────────────────────────
+
+@app.get("/api/cards")
+async def api_cards():
+    with db() as conn:
+        cards = get_cards(conn)
+    return {"cards": cards}
+
+
 # ── Vendor Rules ───────────────────────────────────────────────────
 
 @app.get("/api/vendor-rules")
@@ -367,22 +414,24 @@ async def api_statements():
 @app.delete("/api/statements/{statement_id}")
 async def api_delete_statement(statement_id: int):
     with db() as conn:
-        stmt = conn.execute("SELECT filename FROM statements WHERE id = ?", (statement_id,)).fetchone()
+        stmt = conn.execute(
+            "SELECT filename, card FROM statements WHERE id = ?", (statement_id,)
+        ).fetchone()
         if not stmt:
             raise HTTPException(404, "Statement not found")
         delete_statement(conn, statement_id)
 
-    # Remove PDF file
-    if stmt["filename"]:
-        pdf_path = STATEMENTS_DIR / stmt["filename"]
+    # Remove PDF file from card subdir
+    if stmt["filename"] and stmt["card"]:
+        pdf_path = STATEMENTS_DIR / stmt["card"] / stmt["filename"]
         pdf_path.unlink(missing_ok=True)
 
     return {"status": "deleted"}
 
 
-@app.get("/api/pdf/{filename}")
-async def serve_pdf(filename: str):
-    pdf_path = STATEMENTS_DIR / filename
+@app.get("/api/pdf/{card_slug}/{filename}")
+async def serve_pdf(card_slug: str, filename: str):
+    pdf_path = STATEMENTS_DIR / card_slug / filename
     if not pdf_path.exists():
         raise HTTPException(404, "PDF not found")
     return FileResponse(pdf_path, media_type="application/pdf")

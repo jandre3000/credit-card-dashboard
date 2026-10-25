@@ -12,6 +12,7 @@ let categoryList = [];
 // Column filters (multi-select; OR within a column, AND across columns)
 let filters = { vendors: new Set(), categories: new Set(), pointsCategories: new Set() };
 let filterOptions = { vendors: [], categories: [], pointsCategories: [] };
+let allCards = [];  // from GET /api/cards
 let activeFilterCol = null;
 const FILTER_COLS = {
     vendors: { label: 'Vendor', optionsKey: 'vendors', param: 'vendors' },
@@ -55,13 +56,14 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadAllData() {
     const params = getFilterParams();
     const dateStr = getDateParams().toString();
-    const [txns, daily, monthly, yearly, cats, vendor, points, stmts, fopts] = await Promise.all([
+    const [txns, daily, monthly, yearly, cats, vendor, points, stmts, fopts, cardsResp] = await Promise.all([
         fetchJSON(`/api/transactions${params}`), fetchJSON(`/api/spending/daily${params}`),
         fetchJSON(`/api/spending/monthly${params}`), fetchJSON(`/api/spending/yearly${params}`),
         fetchJSON(`/api/spending/categories${params}`),
         fetchJSON(`/api/spending/vendor${params}`), fetchJSON(`/api/points${params}`),
         fetchJSON('/api/statements'),
         fetchJSON(`/api/filters${dateStr ? '?' + dateStr : ''}`),
+        fetchJSON('/api/cards'),
     ]);
     allData.transactions = txns.transactions;
     allData.daily = daily.data; allData.monthly = monthly.data;
@@ -72,6 +74,8 @@ async function loadAllData() {
         categories: fopts.categories || [],
         pointsCategories: fopts.points_categories || [],
     };
+    allCards = cardsResp.cards || [];
+    populateCardDropdown();
     document.getElementById('txn-count').textContent = `${stmts.transaction_count} transactions`;
     buildMonthSelect(); renderTransactions(); renderStatements(stmts.statements);
     renderMainChart(); renderPieCharts();
@@ -505,7 +509,22 @@ function renderMainChart() {
             type: 'bar',
             data: { labels: data.map(d => d.year), datasets: [{ label: 'Yearly Spending', data: data.map(d => d.total),
                 backgroundColor: '#6366f180', borderColor: '#6366f1', borderWidth: 1, borderRadius: 6 }] },
-            options: spendingOpts('$')
+            options: {
+                ...spendingOpts('$'),
+                onClick: (evt, elements) => {
+                    if (elements.length > 0) {
+                        const year = allData.yearly[elements[0].index].year;
+                        document.getElementById('filter-start').value = `${year}-01-01`;
+                        document.getElementById('filter-end').value = `${year}-12-31`;
+                        currentView = 'monthly';
+                        document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === 'monthly'));
+                        loadAllData();
+                    }
+                },
+                onHover: (evt, elements) => {
+                    evt.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
+                }
+            }
         });
         renderChartSummary(data);
     } else {
@@ -701,7 +720,29 @@ function renderTransactions() {
 function renderStatements(stmts) {
     const div = document.getElementById('statements-list');
     if(!stmts.length){div.innerHTML='<p style="color:var(--text-dim)">No statements uploaded yet.</p>';return;}
-    div.innerHTML = stmts.map(s=>`<div class="statement-row"><div class="statement-info"><strong>${escHtml(s.statement_date)}</strong><span class="dim"> · $${(s.total_spend||0).toFixed(2)} · ${(s.total_points||0).toLocaleString()} pts · ${escHtml(s.filename||'')}</span></div><div class="statement-actions"><button class="btn btn-small btn-secondary" onclick="viewPdf('${escAttr(s.filename)}')">View PDF</button><button class="btn btn-small btn-danger" onclick="deleteStmt(${s.id})">Delete</button></div></div>`).join('');
+    // Group by institution > card_label (sorted by QUERY result order: institution, label, date desc)
+    const groups = {};
+    for (const s of stmts) {
+        const inst = s.institution || 'Unknown';
+        const label = s.card_label || s.card || 'Unknown';
+        if (!groups[inst]) groups[inst] = {};
+        if (!groups[inst][label]) groups[inst][label] = [];
+        groups[inst][label].push(s);
+    }
+    let html = '';
+    for (const [inst, cards] of Object.entries(groups)) {
+        const stmtCount = Object.values(cards).reduce((n, arr) => n + arr.length, 0);
+        html += `<div class="statement-institution"><details open><summary><strong>${escHtml(inst)}</strong> <span class="dim">(${stmtCount} statement${stmtCount>1?'s':''})</span></summary>`;
+        for (const [label, stmts] of Object.entries(cards)) {
+            html += `<div class="statement-card"><details open><summary>${escHtml(label)} <span class="dim">(${stmts.length})</span></summary>`;
+            for (const s of stmts) {
+                html += `<div class="statement-row"><div class="statement-info"><strong>${escHtml(s.statement_date)}</strong><span class="dim"> · $${(s.total_spend||0).toFixed(2)} · ${(s.total_points||0).toLocaleString()} pts · ${escHtml(s.filename||'')}</span></div><div class="statement-actions"><button class="btn btn-small btn-secondary" onclick="viewPdf('${escAttr(s.card)}','${escAttr(s.filename)}')">View PDF</button><button class="btn btn-small btn-danger" onclick="deleteStmt(${s.id})">Delete</button></div></div>`;
+            }
+            html += '</details></div>';
+        }
+        html += '</details></div>';
+    }
+    div.innerHTML = html;
 }
 
 // ── Upload ────────────────────────────────────────────────────────
@@ -713,8 +754,9 @@ async function handleUpload(e){
     e.preventDefault();const form=e.target;const files=form.querySelector('input[type=file]').files;
     if(!files.length)return;const status=document.getElementById('upload-status');
     status.className='status';status.textContent=`Uploading ${files.length} file(s)...`;status.classList.remove('hidden');
+    const card=document.getElementById('upload-card').value||'amex_cobalt';
     const fd=new FormData();for(const f of files)fd.append('files',f);
-    try{const res=await fetch(`${API}/api/upload`,{method:'POST',body:fd});const data=await res.json();
+    try{const res=await fetch(`${API}/api/upload?card_slug=${encodeURIComponent(card)}`,{method:'POST',body:fd});const data=await res.json();
     if(!res.ok){status.className='status error';status.textContent=`Error: ${data.detail||'Upload failed'}`;return;}
     const parts=[];if(data.ingested>0){const tx=data.results.reduce((s,r)=>s+r.transactions,0);const sp=data.results.reduce((s,r)=>s+r.total_spend,0);const pt=data.results.reduce((s,r)=>s+r.total_points,0);parts.push(`✓ ${data.ingested} statement(s): ${tx} txns, $${sp.toFixed(2)}, ${pt.toLocaleString()} pts`);}
     if(data.errors.length)parts.push(`${data.errors.length} failed`);
@@ -723,9 +765,17 @@ async function handleUpload(e){
     }catch(err){status.className='status error';status.textContent=`Error: ${err.message}`;}
 }
 
-function viewPdf(fn){document.getElementById('pdf-title').textContent=fn;document.getElementById('pdf-viewer').src=`${API}/api/pdf/${fn}`;document.getElementById('pdf-modal').classList.remove('hidden');}
+function viewPdf(card_slug,fn){document.getElementById('pdf-title').textContent=fn;document.getElementById('pdf-viewer').src=`${API}/api/pdf/${card_slug}/${fn}`;document.getElementById('pdf-modal').classList.remove('hidden');}
 function hidePdf(){document.getElementById('pdf-modal').classList.add('hidden');document.getElementById('pdf-viewer').src='';}
 async function deleteStmt(id){if(!confirm('Delete this statement and all its transactions?'))return;await fetch(`${API}/api/statements/${id}`,{method:'DELETE'});loadAllData();}
+
+function populateCardDropdown() {
+    const sel = document.getElementById('upload-card');
+    if (!sel || !allCards.length) return;
+    sel.innerHTML = allCards.filter(c => c.active).map(c =>
+        `<option value="${escAttr(c.slug)}">${escHtml(c.label)}</option>`
+    ).join('');
+}
 
 async function fetchJSON(u){return(await fetch(u)).json();}
 async function fetchJSON_withMethod(m,u,b){return(await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json();}

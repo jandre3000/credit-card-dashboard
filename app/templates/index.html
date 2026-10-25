@@ -20,8 +20,11 @@
     <!-- Upload Modal -->
     <div id="upload-modal" class="modal hidden">
         <div class="modal-content">
-            <h2>Upload Amex Statement</h2>
+            <h2>Upload Statement</h2>
             <form id="upload-form" enctype="multipart/form-data">
+                <label>Card
+                    <select id="upload-card" name="card_slug"></select>
+                </label>
                 <input type="file" name="files" accept=".pdf" multiple required>
                 <p class="hint">Select multiple PDFs to upload at once</p>
                 <div class="modal-actions">

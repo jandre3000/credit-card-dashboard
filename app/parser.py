@@ -1,4 +1,4 @@
-"""Amex Cobalt statement parser — app-integrated version."""
+"""Statement parsers — registry. Add new parsers as functions and register them in PARSERS."""
 import re
 import pdfplumber
 
@@ -224,3 +224,12 @@ def _match_points(transactions: list[dict], points_entries: list[dict]) -> list[
             txn["points_category"] = "All Other Purchases"
 
     return transactions
+
+
+# Parser registry: institution prefix (from card slug) -> parse function
+PARSERS = {
+    "amex": parse_amex_pdf,
+    # Future parsers:
+    # "td": parse_td_pdf,
+    # "wealthsimple": parse_wealthsimple_pdf,
+}

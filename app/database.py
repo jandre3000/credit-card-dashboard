@@ -66,7 +66,16 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_txn_card ON transactions(card);
         CREATE INDEX IF NOT EXISTS idx_txn_category ON transactions(points_category);
         CREATE INDEX IF NOT EXISTS idx_txn_statement ON transactions(statement_id);
-        """)
+
+        CREATE TABLE IF NOT EXISTS cards (
+            slug TEXT PRIMARY KEY,
+            institution TEXT NOT NULL,
+            product TEXT NOT NULL,
+            label TEXT NOT NULL,
+            active INTEGER DEFAULT 1
+        );
+        """
+        )
 
         # Auto-migrate: add 'category' column if missing from existing DB
         cols = [row[1] for row in conn.execute("PRAGMA table_info(transactions)").fetchall()]
@@ -74,6 +83,30 @@ def init_db():
             conn.execute("ALTER TABLE transactions ADD COLUMN category TEXT DEFAULT ''")
 
         conn.commit()
+
+        # Seed cards table with known cards if empty
+        seed_cards(conn)
+
+
+def seed_cards(conn):
+    """Insert default cards if the table is empty."""
+    if conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0] > 0:
+        return
+    default_cards = [
+        ("amex_cobalt", "Amex", "Cobalt", "Amex Cobalt", 1),
+        ("td_aeroplan_visa_infinite", "TD", "Aeroplan Visa Infinite", "TD Aeroplan Visa Infinite", 1),
+        ("wealthsimple_vip", "Wealthsimple", "Visa Infinite Privilege", "Wealthsimple Visa Infinite Privilege", 1),
+    ]
+    conn.executemany(
+        "INSERT OR IGNORE INTO cards (slug, institution, product, label, active) VALUES (?,?,?,?,?)",
+        default_cards,
+    )
+    conn.commit()
+
+
+def get_cards(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute("SELECT slug, institution, product, label, active FROM cards ORDER BY institution, label").fetchall()
+    return [dict(r) for r in rows]
 
 
 def insert_statement(conn: sqlite3.Connection, data: dict) -> int:
@@ -363,7 +396,10 @@ def get_filter_options(conn: sqlite3.Connection, start_date: str = None, end_dat
 
 def get_statements(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
-        "SELECT * FROM statements ORDER BY statement_date DESC"
+        """SELECT s.*, c.institution, c.label as card_label
+           FROM statements s
+           LEFT JOIN cards c ON s.card = c.slug
+           ORDER BY c.institution, c.label, s.statement_date DESC"""
     ).fetchall()
     return [dict(r) for r in rows]
 
